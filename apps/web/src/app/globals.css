@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/*
+ * FitMe design tokens.
+ *
+ * Dark-first: this app is used in a gym, often in poor light, frequently
+ * one-handed. High contrast, large touch targets, no fine print.
+ */
+@theme {
+  --color-bg: #0b0d10;
+  --color-surface: #14171c;
+  --color-surface-2: #1b1f26;
+  --color-border: #262c35;
+  --color-text: #e9ecef;
+  --color-muted: #98a1ad;
+  --color-faint: #6b7480;
+
+  --color-brand: #4ade80;
+  --color-brand-dim: #22c55e;
+  /*
+   * Data-mark colors, validated as a categorical set against the dark chart
+   * surface (#14171c): OKLCH lightness band, chroma floor, adjacent-pair
+   * separation under deuteranopia/protanopia/tritanopia, and contrast.
+   * Do not substitute lighter tints here — the 400-weight versions of these
+   * hues fail deutan separation between protein and carbs.
+   */
+  --color-kcal: #fbbf24;
+  --color-protein: #ec4899;
+  --color-carbs: #3b82f6;
+  --color-fat: #ea580c;
+
+  /* Lighter tints, for small marks and icons only — never for adjacent fills. */
+  --color-protein-soft: #f9a8d4;
+  --color-carbs-soft: #93c5fd;
+  --color-fat-soft: #fdba74;
+
+  --color-danger: #f87171;
+  --color-warn: #fbbf24;
+  --color-ok: #4ade80;
+  --color-info: #60a5fa;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --radius-card: 16px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+body {
+  margin: 0;
+  /* Room for the fixed bottom navigation, plus the iOS home indicator. */
+  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+}
+
+/* Numbers that change (timers, loads, totals) should not reflow as they tick. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Inputs default to a hairline appearance across browsers. */
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Horizontal scrollers (day strips, chip rows) without visible scrollbars. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

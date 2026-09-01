@@ -1,0 +1,23 @@
+{
+  "name": "FitMe — Training & Nutrition",
+  "short_name": "FitMe",
+  "description": "Training and nutrition in one place, with a coach that reads your actual data.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "categories": ["health", "fitness", "lifestyle"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Snap a meal", "url": "/food?capture=1" },
+    { "name": "Start a workout", "url": "/train" },
+    { "name": "Weigh in", "url": "/progress?weigh=1" }
+  ]
+}
