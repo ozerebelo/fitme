@@ -1,4 +1,5 @@
 import type { Food, Serving } from "../types";
+import { PT_FOOD_SYNONYMS } from "../pt";
 
 /**
  * Curated seed food database, per 100 g (or 100 ml for liquids).
@@ -26,7 +27,7 @@ const s = (label: string, grams: number): Serving => ({ label, grams });
 
 const rows: Row[] = [
   /* ------------------------------- Poultry & meat ----------------------- */
-  ["chicken-breast", "Chicken breast, cooked", 165, 31, 0, 3.6, 0, ["protein", "meat"], [s("1 breast (170 g)", 170), s("1 portion (120 g)", 120)]],
+  ["chicken-breast", "Chicken breast, cooked", 165, 31, 0, 3.6, 0, ["protein", "meat", "chicken"], [s("1 breast (170 g)", 170), s("1 portion (120 g)", 120)]],
   ["chicken-thigh", "Chicken thigh, cooked", 209, 26, 0, 10.9, 0, ["protein", "meat"], [s("1 thigh (85 g)", 85)]],
   ["turkey-breast", "Turkey breast, cooked", 135, 30, 0, 1, 0, ["protein", "meat"], [s("1 portion (120 g)", 120)]],
   ["beef-mince-5", "Beef mince 5% fat, cooked", 187, 27, 0, 8, 0, ["protein", "meat"], [s("1 portion (125 g)", 125)]],
@@ -45,7 +46,7 @@ const rows: Row[] = [
   ["sardines", "Sardines, canned in oil", 208, 25, 0, 11.5, 0, ["protein", "fish"], [s("1 tin (90 g)", 90)]],
 
   /* ------------------------------ Eggs & dairy -------------------------- */
-  ["egg-whole", "Egg, whole", 143, 12.6, 0.7, 9.5, 0, ["protein", "dairy"], [s("1 large egg (50 g)", 50), s("1 medium egg (44 g)", 44)]],
+  ["egg-whole", "Egg, whole", 143, 12.6, 0.7, 9.5, 0, ["protein", "dairy", "eggs"], [s("1 large egg (50 g)", 50), s("1 medium egg (44 g)", 44)]],
   ["egg-white", "Egg white", 52, 10.9, 0.7, 0.2, 0, ["protein", "dairy"], [s("1 large white (33 g)", 33)]],
   ["greek-yogurt-0", "Greek yogurt, 0% fat", 59, 10, 3.6, 0.4, 0, ["protein", "dairy"], [s("1 pot (170 g)", 170), s("1 tbsp (30 g)", 30)]],
   ["greek-yogurt-5", "Greek yogurt, 5% fat", 97, 9, 4, 5, 0, ["protein", "dairy"], [s("1 pot (170 g)", 170)]],
@@ -57,7 +58,7 @@ const rows: Row[] = [
   ["parmesan", "Parmesan", 431, 38, 4.1, 29, 0, ["dairy"], [s("1 tbsp grated (5 g)", 5)]],
   ["cottage-cheese", "Cottage cheese, 2% fat", 84, 11, 4.3, 2.3, 0, ["protein", "dairy"], [s("1 pot (200 g)", 200)]],
   ["butter", "Butter", 717, 0.9, 0.1, 81, 0, ["fat", "dairy"], [s("1 tsp (5 g)", 5), s("1 tbsp (14 g)", 14)]],
-  ["whey-protein", "Whey protein powder", 380, 80, 8, 4, 0, ["protein", "supplement"], [s("1 scoop (30 g)", 30)]],
+  ["whey-protein", "Whey protein powder", 380, 80, 8, 4, 0, ["protein", "supplement", "whey", "shake"], [s("1 scoop (30 g)", 30)]],
 
   /* ------------------------------- Plant protein ------------------------ */
   ["tofu-firm", "Tofu, firm", 144, 17, 3, 9, 2, ["protein", "vegan"], [s("1 block (350 g)", 350), s("1 portion (100 g)", 100)]],
@@ -72,9 +73,9 @@ const rows: Row[] = [
   ["white-rice", "White rice, cooked", 130, 2.7, 28, 0.3, 0.4, ["carb", "grain"], [s("1 cup (158 g)", 158), s("1 portion (200 g)", 200)]],
   ["brown-rice", "Brown rice, cooked", 123, 2.7, 26, 1, 1.6, ["carb", "grain"], [s("1 cup (195 g)", 195)]],
   ["pasta", "Pasta, cooked", 158, 5.8, 31, 0.9, 1.8, ["carb", "grain"], [s("1 cup (140 g)", 140), s("1 portion (200 g)", 200)]],
-  ["bread-wholewheat", "Wholemeal bread", 247, 13, 41, 3.4, 7, ["carb", "grain"], [s("1 slice (38 g)", 38)]],
-  ["bread-white", "White bread", 265, 9, 49, 3.2, 2.7, ["carb", "grain"], [s("1 slice (36 g)", 36)]],
-  ["oats", "Oats, dry", 389, 16.9, 66, 6.9, 10.6, ["carb", "grain"], [s("1 serving (40 g)", 40), s("1 cup (81 g)", 81)]],
+  ["bread-wholewheat", "Wholemeal bread", 247, 13, 41, 3.4, 7, ["carb", "grain", "toast", "bread"], [s("1 slice (38 g)", 38)]],
+  ["bread-white", "White bread", 265, 9, 49, 3.2, 2.7, ["carb", "grain", "toast", "bread"], [s("1 slice (36 g)", 36)]],
+  ["oats", "Oats, dry", 389, 16.9, 66, 6.9, 10.6, ["carb", "grain", "oatmeal", "porridge"], [s("1 serving (40 g)", 40), s("1 cup (81 g)", 81)]],
   ["quinoa", "Quinoa, cooked", 120, 4.4, 21, 1.9, 2.8, ["carb", "grain"], [s("1 cup (185 g)", 185)]],
   ["couscous", "Couscous, cooked", 112, 3.8, 23, 0.2, 1.4, ["carb", "grain"], [s("1 cup (157 g)", 157)]],
   ["tortilla", "Flour tortilla", 306, 8, 51, 7.7, 3, ["carb", "grain"], [s("1 wrap (49 g)", 49)]],
@@ -83,7 +84,7 @@ const rows: Row[] = [
   ["granola", "Granola", 471, 10, 64, 20, 7, ["carb", "grain"], [s("1 serving (50 g)", 50)]],
 
   /* -------------------------------- Potatoes ---------------------------- */
-  ["potato", "Potato, boiled", 87, 1.9, 20, 0.1, 1.8, ["carb", "vegetable"], [s("1 medium (170 g)", 170)]],
+  ["potato", "Potato, boiled", 87, 1.9, 20, 0.1, 1.8, ["carb", "vegetable", "potatoes"], [s("1 medium (170 g)", 170)]],
   ["sweet-potato", "Sweet potato, baked", 90, 2, 21, 0.2, 3.3, ["carb", "vegetable"], [s("1 medium (150 g)", 150)]],
   ["french-fries", "French fries", 312, 3.4, 41, 15, 3.8, ["carb", "fast-food"], [s("small portion (100 g)", 100), s("large portion (170 g)", 170)]],
 
@@ -126,7 +127,7 @@ const rows: Row[] = [
   ["hummus", "Hummus", 166, 7.9, 14, 9.6, 6, ["dip"], [s("2 tbsp (30 g)", 30)]],
 
   /* -------------------------------- Prepared ---------------------------- */
-  ["pizza-cheese", "Pizza, cheese", 266, 11, 33, 10, 2.3, ["prepared", "fast-food"], [s("1 slice (107 g)", 107)]],
+  ["pizza-cheese", "Pizza, cheese", 266, 11, 33, 10, 2.3, ["prepared", "fast-food", "pizza"], [s("1 slice (107 g)", 107)]],
   ["burger", "Hamburger, fast food", 295, 17, 24, 14, 1.5, ["prepared", "fast-food"], [s("1 burger (110 g)", 110)]],
   ["sushi-roll", "Sushi roll", 150, 6, 28, 1.5, 1.5, ["prepared"], [s("1 roll, 6 pieces (170 g)", 170)]],
   ["caesar-salad", "Caesar salad with dressing", 190, 8, 8, 14, 1.6, ["prepared", "salad"], [s("1 bowl (250 g)", 250)]],
@@ -165,7 +166,10 @@ export const FOODS: Food[] = rows.map(
     basis: basis ?? "g",
     per100: { kcal, protein, carbs, fat, fiber },
     servings,
-    tags,
+    // Portuguese names are kept out of the table above and merged in here, so
+    // the composition data stays readable and the translation stays reviewable
+    // as one list. Search treats them exactly like any other tag.
+    tags: [...tags, ...(PT_FOOD_SYNONYMS[id] ?? [])],
     verified: true,
   }),
 );

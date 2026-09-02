@@ -5,8 +5,10 @@ import type { MealType, MemoryFact, RawFoodItem } from "@fitme/core";
 import {
   createFact,
   groundItems,
+  looksPortuguese,
   matchFoodByName,
   memoryBriefing,
+  parseMeal,
 } from "@fitme/core";
 import { useApp } from "@/lib/state";
 import {
@@ -54,6 +56,28 @@ const EXAMPLES = [
   "Whenever I say milk, it's Oatly Barista — usually 250 ml",
 ];
 
+/**
+ * The confirmation for a locally parsed message, in the language it was written
+ * in. The model-backed path is told to do the same; this is the offline half of
+ * the same promise.
+ */
+const localReply = (message: string, names: string[]): string => {
+  const pt = looksPortuguese(message);
+  if (names.length === 0) {
+    return pt ? "Fica registado. Vou aplicar isso a partir de agora." : "Noted. I will apply that from now on.";
+  }
+  const list = names.join(", ");
+  return pt
+    ? `Registei — ${list}. Ajusta as porções abaixo se estiverem erradas.`
+    : `Got it — ${list}. Adjust the portions below if they are off.`;
+};
+
+/** As above, for the half-understood case when the model was unreachable. */
+const partialReply = (message: string, names: string[], unresolved: string[]): string =>
+  looksPortuguese(message)
+    ? `Consegui ${names.join(", ")} aqui no telemóvel. Não percebi ${unresolved.join(", ")} — acrescenta esses pela pesquisa ou por adição rápida.`
+    : `I worked out ${names.join(", ")} on this device. I could not place ${unresolved.join(", ")} — add those with search or a quick add.`;
+
 export const ChatLogSheet = ({
   open,
   meal,
@@ -72,6 +96,7 @@ export const ChatLogSheet = ({
   const [error, setError] = useState("");
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [learned, setLearned] = useState<MemoryFact[]>([]);
+  const [localOnly, setLocalOnly] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -93,6 +118,56 @@ export const ChatLogSheet = ({
     setBusy(true);
     setError("");
 
+    /*
+     * Try to understand it here first.
+     *
+     * "Two eggs, toast with butter and a coffee" is a quantity, a unit and a
+     * food name three times over — no model required. Parsing that on the
+     * device makes the common case free, instant and available with no network
+     * at all; the model is only worth the round trip for what this cannot
+     * resolve. It reads Portuguese as well as English.
+     *
+     * Only the opening message, though. A follow-up is a correction as often as
+     * an addition — "na verdade era meio abacate" against "e um abacate" — and
+     * telling those apart needs the conversation, which is what the model has
+     * and this does not. Portions are editable in the review list below
+     * regardless, so nothing depends on getting a follow-up through.
+     */
+    const local =
+      turns.length === 0
+        ? parseMeal(message, { foods, memory: data.memory })
+        : null;
+    if (local?.confident) {
+      const facts = local.facts.map((fact) => {
+        const match = fact.foodName ? matchFoodByName(foods, fact.foodName, 300) : null;
+        return createFact({
+          kind: fact.kind,
+          trigger: fact.trigger,
+          text: fact.statement,
+          foodId: match?.id,
+          defaultGrams: fact.defaultGrams,
+        });
+      });
+      if (facts.length > 0) {
+        rememberFacts(facts);
+        setLearned((current) => [...current, ...facts]);
+      }
+      if (local.items.length > 0) {
+        setRows(toReviewRows(local.items));
+        markFactsUsed(local.items.map((i) => i.factId).filter((id): id is string => !!id));
+      }
+      setTurns([
+        ...next,
+        {
+          role: "assistant",
+          content: localReply(message, local.items.map((i) => i.name.toLowerCase())),
+        },
+      ]);
+      setLocalOnly(true);
+      setBusy(false);
+      return;
+    }
+
     try {
       const response = await fetch("/api/chat/log", {
         method: "POST",
@@ -102,9 +177,28 @@ export const ChatLogSheet = ({
       const json = (await response.json()) as ParseResult & { message?: string };
 
       if (!response.ok) {
+        // No model available: keep whatever was understood locally rather than
+        // throwing the whole message away.
+        if (local && local.items.length > 0) {
+          setRows(toReviewRows(local.items));
+          setTurns([
+            ...next,
+            {
+              role: "assistant",
+              content: partialReply(
+                message,
+                local.items.map((i) => i.name.toLowerCase()),
+                local.unresolved,
+              ),
+            },
+          ]);
+          setLocalOnly(true);
+          return;
+        }
         setError(json.message ?? "That didn't go through.");
         return;
       }
+      setLocalOnly(false);
 
       setTurns([...next, { role: "assistant", content: json.reply }]);
 
@@ -248,6 +342,11 @@ export const ChatLogSheet = ({
 
         {rows.length > 0 && (
           <>
+            {localOnly && (
+              <p className="rounded-lg bg-surface-2 px-3 py-2 text-xs leading-relaxed text-faint">
+                Worked out on this device — no network, no cost.
+              </p>
+            )}
             <ItemReview rows={rows} foods={foods} onChange={setRows} />
             <div className="rounded-xl bg-surface-2 p-3">
               <div className="flex items-baseline justify-between">
@@ -282,7 +381,9 @@ export const ChatLogSheet = ({
           <TextInput
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={rows.length > 0 ? "Correct it, or add more…" : "What did you eat?"}
+            placeholder={
+              rows.length > 0 ? "Correct it, or add more…" : "What did you eat? / O que comeste?"
+            }
             enterKeyHint="send"
             disabled={busy}
             autoComplete="off"

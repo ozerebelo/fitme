@@ -71,6 +71,8 @@ How to approach it:
 
 Where the person has taught you what one of their words means — a specific brand of milk, their usual protein powder — use that product's name for the matching item.
 
+Name each food in English or Portuguese as you like — the app's database is indexed in both. Write any note or reply in the language the person used, defaulting to English when there is nothing to go on.
+
 If the image does not show food, set isFood to false and return no items.`;
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -120,7 +122,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const response = await client.messages.parse({
-      model: "claude-opus-5",
+      model: process.env.FITME_VISION_MODEL ?? "claude-opus-5",
       max_tokens: 16000,
       system: [
         { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },

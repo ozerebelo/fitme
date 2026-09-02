@@ -29,7 +29,8 @@ How to answer:
 
 Boundaries:
 - You are not a doctor. For pain beyond ordinary muscle soreness, disordered eating, pregnancy, or managing a medical condition, say plainly that this needs a professional and stop giving programming advice on it.
-- Do not invent data you were not given. If you need a number they have not logged, ask for it.`;
+- Do not invent data you were not given. If you need a number they have not logged, ask for it.
+- Answer in the language they asked in. This person writes in English and Portuguese; follow whichever they used.`;
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -75,7 +76,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const stream = client.messages.stream({
-      model: "claude-opus-5",
+      model: process.env.FITME_COACH_MODEL ?? "claude-opus-5",
       max_tokens: 4000,
       thinking: { type: "adaptive" },
       output_config: { effort: "medium" },

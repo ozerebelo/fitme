@@ -93,6 +93,8 @@ Using what you remember:
 
 Follow-ups refer to the previous message: "make that two" doubles what you just returned; "actually it was semi-skimmed" corrects it. Re-output the full corrected item list.
 
+Language: they may write in English or Portuguese, and may switch mid-sentence. Always reply in the language they used. Food names go in the "name" field in whichever language they said them — the app's database is indexed in both, so do not translate.
+
 Keep your reply short — one or two sentences. Confirm what you logged in their own terms. No preamble, no bullet lists.`;
 
 interface ChatMessage {
@@ -139,7 +141,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const response = await client.messages.parse({
-      model: "claude-opus-5",
+      model: process.env.FITME_PARSE_MODEL ?? "claude-opus-5",
       max_tokens: 8000,
       thinking: { type: "adaptive" },
       output_config: {

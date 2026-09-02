@@ -69,6 +69,69 @@ Without it, photo logging and coach Q&A show a clear message and everything
 else — including all the coaching insights, which are computed locally — carries
 on working.
 
+### What actually costs money
+
+Most of the app never touches a model. Only three routes do, and only one of
+them is on a path you use every day:
+
+| Feature | Runs where | Needs a key |
+| --- | --- | --- |
+| Search, barcode scan, manual entry | Device | No |
+| Typed meals — *"dois ovos com torrada e café"* | Device | No |
+| Coaching insights, adaptive TDEE, progressive overload | Device | No |
+| Strong import, routines, charts, sync | Device | No |
+| Typed meals the on-device parser cannot resolve | `api/chat/log` | Yes |
+| Photo logging | `api/vision/meal` | Yes |
+| Coach Q&A | `api/coach` | Yes |
+
+Typed logging is the interesting one. `parse.ts` in `@fitme/core` reads a
+sentence — in English or Portuguese — into quantities, measures and food names,
+and grounds them against the catalog on the device. It only falls through to the
+model for what it could not resolve, so an ordinary day of logging costs
+nothing, works on the Tube, and returns instantly.
+
+Photo logging and coach Q&A cannot be made free the same way. Reading a plate
+off a photograph and answering a question about four years of training history
+are both jobs for a hosted model; there is no on-device substitute worth
+shipping. If you do not set a key, both say so plainly and the rest of the app
+is unaffected.
+
+Each route reads its model from an environment variable, so you can trade cost
+against quality per feature without touching code:
+
+```bash
+FITME_VISION_MODEL=claude-opus-5      # photo logging
+FITME_PARSE_MODEL=claude-opus-5       # typed meals the device could not parse
+FITME_COACH_MODEL=claude-opus-5       # coach Q&A
+FITME_PARSE_EFFORT=low                # low | medium | high
+```
+
+Photo logging is the one worth paying for; the parse route sees only the
+sentences the device gave up on, and a smaller model handles most of them.
+
+### Portuguese
+
+Meals can be described in either language, and the two can be mixed in one
+sentence. This is not a UI translation — the interface stays in English — it is
+the *input* that is bilingual, which is the part that has to keep up with how
+fast you type.
+
+The on-device parser reads Portuguese numbers (`dois`, `meia`), measures
+(`colher de sopa`, `fatia`, `chávena`, `punhado`, `medida`), the ways a sentence
+opens (`hoje ao almoço comi…`, `o pequeno-almoço foi…`) and the ways people
+teach it something (`sempre que eu disser leite é o Mimosa magro`, `não como
+porco`). Accents are optional throughout. The seed catalog carries Portuguese
+names for every food in it, including the Brazilian variants where they differ,
+so `bacalhau`, `grão`, `esparguete` and `abacaxi` all resolve locally.
+
+Where two foods could claim the same word, the plain word goes to the one people
+mean by it: `frango` is a chicken breast and `coxa de frango` is a thigh;
+`chocolate` is milk chocolate and `chocolate negro` is dark. All of the
+vocabulary lives in `packages/core/src/pt.ts`, in one reviewable list.
+
+The three model-backed routes are told to answer in whichever language you
+wrote in.
+
 ```bash
 npm run check        # typecheck + tests + production build
 npm test             # domain test suite
@@ -180,6 +243,30 @@ environment variable is the whole deployment.
    cross-device sync (see below). `apps/web/.env.example` lists the rest.
 3. Deploy. Open it on your phone and use *Add to Home Screen* — it installs as a
    standalone app and the workout logger keeps working offline.
+
+### If the deploy builds but every page is `404: NOT_FOUND`
+
+This is the *same* misconfiguration as the error above, one step further along.
+`apps/web/public` exists (it holds the icons and the manifest), so once the Root
+Directory is `apps/web`, a build with the framework preset still set to **Other**
+stops failing and starts succeeding — by publishing that icon folder as a static
+site. There is no `index.html` in it, so every route returns Vercel's generic
+404.
+
+The fix is **Settings → Build and Deployment → Framework Preset → Next.js**, and
+clearing any **Output Directory** override that was set while chasing the first
+error. Redeploy after changing it; Vercel does not rebuild on a settings change
+on its own.
+
+One other thing produces an identical page: a **Production Branch** that does not
+exist in the repository. Vercel defaults it to `main`, and if the branch you push
+is named something else, the production domain has no deployment behind it. The
+two are easy to tell apart — open the deployment itself in the Vercel dashboard
+and click its own `…vercel.app` URL:
+
+- that URL 404s too → build output, fix the framework preset;
+- that URL works and only the production domain 404s → **Settings → Git →
+  Production Branch**, set it to the branch you actually push.
 
 Two notes worth knowing:
 

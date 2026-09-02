@@ -103,17 +103,38 @@ export const scoreFood = (food: Food, query: string): number => {
   if (!q) return 0;
   const name = normalize(food.name);
   const brand = food.brand ? normalize(food.brand) : "";
-  const haystack = `${name} ${brand} ${food.tags.join(" ")}`;
+  // Tags carry the synonyms, including the Portuguese ones, so they have to be
+  // normalized the same way the query is: "pão" and "pao" are one word.
+  const tags = food.tags.map(normalize);
+  const haystack = `${name} ${brand} ${tags.join(" ")}`;
+
+  // Tie-breakers are additive, never subtractive: a shorter name should rank
+  // higher within a tier, but must not fall out of its tier and below the
+  // caller's confidence bar. "Toast" matching bread only via a tag is still a
+  // match.
+  const brevity = Math.max(0, 40 - name.length) / 10;
 
   if (name === q) return 1000;
-  if (name.startsWith(q)) return 800 - name.length;
+
+  // A tag the query matches *exactly* is a deliberate alias for this food, and
+  // outranks every partial match. It is the only thing that can separate two
+  // foods whose synonyms overlap as substrings: "frango" is a chicken breast,
+  // while "coxa de frango" is a thigh — yet the thigh's tag contains "frango"
+  // and would otherwise win on brevity.
+  // Longer exact tags are more specific: "barra de proteína" is a protein bar,
+  // while the "proteína" inside it is the powder. The term is constant for a
+  // given query, so it never reorders two foods against the same query — it
+  // only settles which *reading* of a fragment to trust.
+  if (tags.includes(q)) return 900 + Math.min(q.length, 30) / 2 + brevity;
+
+  if (name.startsWith(q)) return 800 + brevity;
 
   const words = q.split(" ");
   if (words.every((w) => haystack.includes(w))) {
     const inName = words.filter((w) => name.includes(w)).length;
-    return 500 + inName * 20 - name.length;
+    return 500 + inName * 20 + brevity;
   }
-  if (haystack.includes(q)) return 300 - name.length;
+  if (haystack.includes(q)) return 300 + brevity;
   return 0;
 };
 
@@ -146,8 +167,24 @@ export const searchFoods = (
 };
 
 /**
- * Best catalog match for a free-text food name, used to ground photo-derived
- * items in real composition data instead of a model's guess.
+ * Crude English singularisation, enough for food words.
+ * People type "eggs" and "two bananas"; the catalog lists them singular.
+ */
+export const singularise = (word: string): string => {
+  if (word.length <= 3) return word;
+  if (/(ss|us|is)$/.test(word)) return word;
+  if (/ies$/.test(word)) return `${word.slice(0, -3)}y`;
+  if (/(ch|sh|x|z|s)es$/.test(word)) return word.slice(0, -2);
+  if (/s$/.test(word)) return word.slice(0, -1);
+  return word;
+};
+
+const singulariseAll = (text: string): string =>
+  text.split(/\s+/).map(singularise).join(" ");
+
+/**
+ * Best catalog match for a free-text food name, used to ground model-derived
+ * and typed items in real composition data instead of a guess.
  * Returns null when nothing scores above the confidence bar.
  */
 export const matchFoodByName = (
@@ -155,13 +192,22 @@ export const matchFoodByName = (
   name: string,
   minScore = 500,
 ): Food | null => {
+  const attempts = [name, singulariseAll(name)].filter(
+    (value, index, all) => all.indexOf(value) === index,
+  );
+
+  // Score every spelling and take the best overall, rather than accepting the
+  // first that clears the bar: "eggs" weakly matches "Scrambled eggs with
+  // butter", while its singular strongly matches "Egg, whole".
   let best: Food | null = null;
   let bestScore = 0;
-  for (const food of foods) {
-    const score = scoreFood(food, name);
-    if (score > bestScore) {
-      bestScore = score;
-      best = food;
+  for (const attempt of attempts) {
+    for (const food of foods) {
+      const score = scoreFood(food, attempt);
+      if (score > bestScore) {
+        bestScore = score;
+        best = food;
+      }
     }
   }
   return bestScore >= minScore ? best : null;
