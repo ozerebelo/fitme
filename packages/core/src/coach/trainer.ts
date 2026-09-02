@@ -12,6 +12,7 @@ import {
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { linearSlope, mean, sessionsInRange } from "../analytics";
 import { lastNDays } from "../date";
+import { type RepRangePolicy, readyToProgress } from "../progression";
 import { round } from "../units";
 import { bySeverity } from "./nutritionist";
 
@@ -49,6 +50,7 @@ const MUSCLE_LABELS: Record<MuscleGroup, string> = {
 export const analyseTraining = (
   ctx: CoachContext,
   catalog: Map<string, Exercise> = EXERCISE_BY_ID,
+  policy?: RepRangePolicy,
 ): Insight[] => {
   const out: Insight[] = [];
   const { profile, sessions, asOf } = ctx;
@@ -262,6 +264,31 @@ export const analyseTraining = (
         ),
       );
     }
+  }
+
+  /* --------------------------- Ready to load up --------------------------- */
+
+  const ready = readyToProgress(sessions, {
+    catalog,
+    units: profile.units,
+    asOf,
+    ...(policy ? { policy } : {}),
+  });
+  if (ready.length > 0) {
+    const names = ready.slice(0, 3).map((r) => r.exerciseName);
+    out.push(
+      insight(
+        "ready-to-progress",
+        "info",
+        `${ready.length} ${ready.length === 1 ? "lift is" : "lifts are"} ready to go up`,
+        `${names.join(", ")}${ready.length > 3 ? ` and ${ready.length - 3} more` : ""} cleared the top of their rep range at a manageable effort last session. Leaving the weight there now is the most common way a good programme quietly turns into maintenance.`,
+        ready
+          .slice(0, 3)
+          .map((r) => `${r.exerciseName} → ${Math.round((r.suggestedWeightKg ?? 0) * 10) / 10} kg`)
+          .join(" · "),
+        { ready: ready.length },
+      ),
+    );
   }
 
   /* ------------------------------ Recent PRs ------------------------------ */

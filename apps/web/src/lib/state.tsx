@@ -17,6 +17,7 @@ import type {
   Food,
   FoodEntry,
   MemoryFact,
+  ProgressionStatus,
   Profile,
   Program,
   WorkoutSession,
@@ -26,6 +27,7 @@ import {
   FOODS,
   buildCoachReport,
   findConflictingFact,
+  progressionBoard,
   touchFact,
   generateProgram,
   resolveTargets,
@@ -53,6 +55,8 @@ interface AppState {
   exerciseMap: Map<string, Exercise>;
   targets: DailyTargets;
   coach: ReturnType<typeof buildCoachReport>;
+  /** Every recently trained lift, with what to do about the weight next time. */
+  progression: ProgressionStatus[];
   currentWeightKg: number | null;
 
   setProfile: (profile: Profile) => void;
@@ -440,7 +444,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       program: data.program ?? undefined,
       asOf,
     };
-    return buildCoachReport(context, exerciseMap);
+    return buildCoachReport(context, exerciseMap, data.settings.repRange);
   }, [
     data.profile,
     data.metrics,
@@ -450,8 +454,20 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     targets,
     currentWeightKg,
     exerciseMap,
+    data.settings.repRange,
     asOf,
   ]);
+
+  const progression = useMemo(
+    () =>
+      progressionBoard(data.sessions, {
+        policy: data.settings.repRange,
+        units: data.profile?.units ?? "metric",
+        catalog: exerciseMap,
+        asOf,
+      }),
+    [data.sessions, data.settings.repRange, data.profile?.units, exerciseMap, asOf],
+  );
 
   const value = useMemo<AppState>(
     () => ({
@@ -462,6 +478,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       exerciseMap,
       targets,
       coach,
+      progression,
       currentWeightKg,
       setProfile,
       updateSettings,
@@ -484,7 +501,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       replaceAll,
     }),
     [
-      ready, data, foods, exercises, exerciseMap, targets, coach, currentWeightKg,
+      ready, data, foods, exercises, exerciseMap, targets, coach, progression, currentWeightKg,
       setProfile, updateSettings, addEntries, updateEntry, removeEntry, addCustomFood,
       rememberFacts, updateFact, forgetFact, markFactsUsed, logWater,
       logWeight, removeMetric, saveSession, removeSession, importSessions, setProgram,

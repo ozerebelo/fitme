@@ -14,6 +14,7 @@ import { buildEnergyPlan, estimateAdaptiveTdee } from "../energy";
 import { buildDailyTargets } from "../macros";
 import { EXERCISE_BY_ID } from "../data/exercises";
 import { exerciseHistory, suggestProgression } from "../strength";
+import { type RepRangePolicy, resolveRepRange } from "../progression";
 import { nextProgramDay } from "../programs";
 import { weightTrend } from "../analytics";
 import { toDateKey } from "../date";
@@ -99,6 +100,8 @@ export const planNextSession = (
   sessions: WorkoutSession[],
   profile: Profile,
   catalog: Map<string, Exercise> = EXERCISE_BY_ID,
+  /** When set, the user's own rep ranges override the programme's. */
+  policy?: RepRangePolicy,
 ): PlannedSession | null => {
   const completedDayIds = sessions
     .filter((s) => s.programId === program.id && s.programDayId)
@@ -110,6 +113,9 @@ export const planNextSession = (
 
   const blocks: PlannedSet[] = day.blocks.map((block) => {
     const exercise = catalog.get(block.exerciseId);
+    const [repMin, repMax] = policy
+      ? resolveRepRange(exercise, policy)
+      : [block.repMin, block.repMax];
     const history = exerciseHistory(sessions, block.exerciseId);
     const isUpper = !exercise
       ? true
@@ -118,10 +124,10 @@ export const planNextSession = (
         );
 
     const suggestion = suggestProgression(history, {
-      repMin: block.repMin,
-      repMax: block.repMax,
+      repMin,
+      repMax,
       sets: block.sets,
-      targetRpe: block.rpe,
+      targetRpe: policy?.targetRpe ?? block.rpe,
       units: profile.units,
       isUpperBody: isUpper,
     });
@@ -131,8 +137,8 @@ export const planNextSession = (
       exerciseId: block.exerciseId,
       exerciseName: exercise?.name ?? block.exerciseId,
       sets: suggestion.sets,
-      repMin: block.repMin,
-      repMax: block.repMax,
+      repMin,
+      repMax,
       rpe: block.rpe,
       restSeconds: block.restSeconds,
       suggestedWeightKg: suggestion.action === "start" ? null : suggestion.weightKg,
@@ -174,13 +180,14 @@ export interface CoachReport {
 export const buildCoachReport = (
   ctx: CoachContext,
   catalog: Map<string, Exercise> = EXERCISE_BY_ID,
+  policy?: RepRangePolicy,
 ): CoachReport => {
   const nutrition = analyseNutrition(ctx);
-  const training = analyseTraining(ctx, catalog);
+  const training = analyseTraining(ctx, catalog, policy);
   const insights = [...nutrition, ...training].sort(bySeverity);
 
   const plannedSession = ctx.program
-    ? planNextSession(ctx.program, ctx.sessions, ctx.profile, catalog)
+    ? planNextSession(ctx.program, ctx.sessions, ctx.profile, catalog, policy)
     : null;
 
   return {

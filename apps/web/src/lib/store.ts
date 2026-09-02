@@ -1,5 +1,6 @@
 import type {
   BodyMetric,
+  RepRangePolicy,
   Exercise,
   Food,
   FoodEntry,
@@ -8,6 +9,7 @@ import type {
   Program,
   WorkoutSession,
 } from "@fitme/core";
+import { DEFAULT_REP_RANGE_POLICY } from "@fitme/core";
 import { idbGet, idbSet } from "./idb";
 
 export const STORAGE_KEY = "app-state";
@@ -25,6 +27,8 @@ export const SCHEMA_VERSION = 1;
 const JOURNAL_KEY = "fitme:journal";
 
 export interface AppSettings {
+  /** Rep ranges that drive the progressive-overload suggestions. */
+  repRange: RepRangePolicy;
   /** Default rest between sets, in seconds. */
   restSeconds: number;
   /** Play a sound and vibrate when the rest timer finishes. */
@@ -56,6 +60,7 @@ export interface AppData {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  repRange: { ...DEFAULT_REP_RANGE_POLICY },
   restSeconds: 120,
   restAlert: true,
   barWeightKg: 20,
@@ -102,7 +107,12 @@ export const migrate = (raw: unknown): AppData => {
     memory: data.memory ?? [],
     water: data.water ?? {},
     recentFoodIds: data.recentFoodIds ?? [],
-    settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      ...(data.settings ?? {}),
+      // Nested, so a spread would drop fields added after the document was saved.
+      repRange: { ...DEFAULT_REP_RANGE_POLICY, ...(data.settings?.repRange ?? {}) },
+    },
   };
 };
 

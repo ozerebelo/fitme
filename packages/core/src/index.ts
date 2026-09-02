@@ -10,6 +10,7 @@ export * from "./grounding";
 export * from "./openfoodfacts";
 export * from "./strength";
 export * from "./programs";
+export * from "./progression";
 export * from "./csv";
 export * from "./coach/index";
 export * from "./importers/strong";

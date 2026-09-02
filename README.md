@@ -151,9 +151,14 @@ newer of the two wins on load.
 The app is local-first, so there is no database to provision. Vercel plus one
 environment variable is the whole deployment.
 
-1. Import the repo on Vercel and set **Root Directory** to `apps/web`. The npm
-   workspace is detected automatically and `@fitme/core` is compiled as part of
-   the app build.
+1. Import the repo on Vercel, then — **before the first deploy** — open
+   **Settings → Build and Deployment → Root Directory** and set it to
+   `apps/web`. This is a monorepo, so with the root left at the repository root
+   Vercel finds no framework, falls back to a static build, and fails with
+   *"No Output Directory named public found after the Build completed."* That
+   error means this setting, nothing else. With it set, Next.js is detected,
+   the npm workspace is installed from the repository root, and `@fitme/core`
+   is compiled as part of the app build.
 2. Set `ANTHROPIC_API_KEY` (see `apps/web/.env.example` for the optional ones).
 3. Deploy. Open it on your phone and use *Add to Home Screen* — it installs as a
    standalone app and the workout logger keeps working offline.
