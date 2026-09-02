@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   ActivityLevel,
@@ -35,6 +35,7 @@ import {
   TextInput,
 } from "@/components/ui";
 import { ChevronLeftIcon } from "@/components/icons";
+import { CredentialsForm } from "@/components/settings/AccountSettings";
 
 const EQUIPMENT_OPTIONS: { value: Equipment; label: string }[] = [
   { value: "bodyweight", label: "Bodyweight" },
@@ -58,8 +59,9 @@ const STEPS = ["You", "Goal", "Training", "Food", "Plan"] as const;
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { setProfile, logWeight, setProgram, data } = useApp();
+  const { setProfile, logWeight, setProgram, data, account } = useApp();
   const [step, setStep] = useState(0);
+  const [signingIn, setSigningIn] = useState(false);
 
   const [units, setUnits] = useState<UnitSystem>("metric");
   const [name, setName] = useState("");
@@ -146,6 +148,32 @@ export default function OnboardingPage() {
   const next = (): void => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = (): void => setStep((s) => Math.max(s - 1, 0));
 
+  /*
+   * Setting up a second device should not mean answering these questions
+   * again — the answers are already in the account. Signing in pulls the whole
+   * document down, profile included, and the effect below sends them straight
+   * in once it lands.
+   */
+  useEffect(() => {
+    if (account.user && data.profile) router.replace("/");
+  }, [account.user, data.profile, router]);
+
+  if (signingIn) {
+    return (
+      <div className="px-4 pb-10 pt-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
+        <p className="mt-1 mb-5 text-sm leading-relaxed text-muted">
+          Sign in and everything you have already logged comes down to this device — your
+          targets, your routines and your history. Nothing to set up again.
+        </p>
+        <CredentialsForm startWith="in" />
+        <Button className="mt-5" onClick={() => setSigningIn(false)}>
+          Back to setup
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 pb-10 pt-6">
       <div className="mb-6">
@@ -183,6 +211,15 @@ export default function OnboardingPage() {
               you have a couple of weeks of data, FitMe measures your actual maintenance
               calories and replaces the estimate with it.
             </p>
+            {account.available && (
+              <button
+                type="button"
+                onClick={() => setSigningIn(true)}
+                className="mt-3 text-sm font-medium text-brand underline underline-offset-4"
+              >
+                Already have an account? Sign in
+              </button>
+            )}
           </div>
 
           <Segmented

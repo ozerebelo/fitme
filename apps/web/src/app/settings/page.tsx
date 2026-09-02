@@ -14,7 +14,7 @@ import { useApp } from "@/lib/state";
 import { RequireProfile } from "@/components/Guard";
 import { MemoryPanel } from "@/components/settings/MemoryPanel";
 import { RepRangeSettings } from "@/components/settings/RepRangeSettings";
-import { SyncSettings } from "@/components/settings/SyncSettings";
+import { AccountSettings } from "@/components/settings/AccountSettings";
 import { StrongImport } from "@/components/settings/StrongImport";
 import {
   Button,
@@ -383,8 +383,8 @@ function Settings() {
         {/* ------------------------------ Memory ----------------------------- */}
         <MemoryPanel />
 
-        {/* ------------------------------- Sync ------------------------------ */}
-        <SyncSettings />
+        {/* ------------------------------ Account ----------------------------- */}
+        <AccountSettings />
 
         {/* ------------------------------- Data ------------------------------ */}
         <StrongImport />

@@ -1,16 +1,80 @@
 import type { AppData } from "./store";
 
 /**
- * Client half of cross-device sync.
+ * Client half of the account's stored copy.
  *
- * The device stays the source of truth: sync pulls once on load, adopts the
- * remote document only if it is newer, and pushes when the page is hidden. That
+ * Authentication is the session cookie, so nothing here carries a credential —
+ * the browser attaches it, and a signed-out request simply gets a 401.
+ *
+ * The device stays the source of truth: it pulls once on load, adopts the
+ * stored document only if it is newer, and pushes when the page is hidden. That
  * cadence is deliberate — the document is a single blob that can run to a few
  * megabytes with years of training history, and pushing it on every keystroke
  * would be wasteful for something one person edits on two devices.
  */
 
-const SECRET_KEY = "fitme:sync-secret";
+export interface Account {
+  id: string;
+  email: string;
+}
+
+export interface AuthState {
+  /** False when the deployment has no database, so accounts cannot exist. */
+  available: boolean;
+  user: Account | null;
+  /** Before the first /api/auth/me reply, we do not yet know. */
+  known: boolean;
+}
+
+export const fetchAccount = async (): Promise<AuthState> => {
+  try {
+    const response = await fetch("/api/auth/me", { cache: "no-store" });
+    const json = (await response.json()) as { available?: boolean; user?: Account | null };
+    return { available: !!json.available, user: json.user ?? null, known: true };
+  } catch {
+    // Offline. Say nothing about accounts rather than claiming there are none.
+    return { available: false, user: null, known: false };
+  }
+};
+
+export interface CredentialResult {
+  ok: boolean;
+  user?: Account;
+  message?: string;
+}
+
+const credentials = async (
+  path: "login" | "register",
+  email: string,
+  password: string,
+): Promise<CredentialResult> => {
+  try {
+    const response = await fetch(`/api/auth/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const json = (await response.json()) as { user?: Account; message?: string };
+    if (!response.ok) return { ok: false, message: json.message ?? "That did not work." };
+    return { ok: true, user: json.user };
+  } catch {
+    return { ok: false, message: "Could not reach the account service." };
+  }
+};
+
+export const signIn = (email: string, password: string): Promise<CredentialResult> =>
+  credentials("login", email, password);
+
+export const signUp = (email: string, password: string): Promise<CredentialResult> =>
+  credentials("register", email, password);
+
+export const signOutRemote = async (): Promise<void> => {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch {
+    /* the cookie expires on its own */
+  }
+};
 
 export type SyncState =
   | "off"
@@ -59,23 +123,6 @@ export const hasRealData = (data: AppData): boolean =>
   (data.sessions?.length ?? 0) > 0 ||
   (data.metrics?.length ?? 0) > 1;
 
-export const readSecret = (): string | null => {
-  try {
-    return localStorage.getItem(SECRET_KEY);
-  } catch {
-    return null;
-  }
-};
-
-export const writeSecret = (secret: string | null): void => {
-  try {
-    if (secret) localStorage.setItem(SECRET_KEY, secret);
-    else localStorage.removeItem(SECRET_KEY);
-  } catch {
-    /* private browsing; sync simply stays off */
-  }
-};
-
 interface RemoteDocument {
   document: AppData | null;
   updatedAt: string | null;
@@ -87,12 +134,9 @@ export interface PullResult {
   message?: string;
 }
 
-export const pull = async (secret: string): Promise<PullResult> => {
+export const pull = async (): Promise<PullResult> => {
   try {
-    const response = await fetch("/api/sync", {
-      headers: { Authorization: `Bearer ${secret}` },
-      cache: "no-store",
-    });
+    const response = await fetch("/api/sync", { cache: "no-store" });
     const json = (await response.json()) as RemoteDocument & { message?: string };
     if (!response.ok) return { ok: false, message: json.message ?? "Sync failed." };
     return { ok: true, remote: json };
@@ -109,11 +153,11 @@ export interface PushResult {
   message?: string;
 }
 
-export const push = async (secret: string, document: AppData): Promise<PushResult> => {
+export const push = async (document: AppData): Promise<PushResult> => {
   try {
     const response = await fetch("/api/sync", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ document }),
     });
     const json = (await response.json()) as {

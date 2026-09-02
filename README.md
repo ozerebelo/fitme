@@ -239,8 +239,9 @@ environment variable is the whole deployment.
    error means this setting, nothing else. With it set, Next.js is detected,
    the npm workspace is installed from the repository root, and `@fitme/core`
    is compiled as part of the app build.
-2. Set `ANTHROPIC_API_KEY`, and `DATABASE_URL` + `FITME_SYNC_SECRET` if you want
-   cross-device sync (see below). `apps/web/.env.example` lists the rest.
+2. Set `ANTHROPIC_API_KEY`, and `DATABASE_URL` if you want accounts and your
+   data on more than one device (see below). `apps/web/.env.example` lists the
+   rest.
 3. Deploy. Open it on your phone and use *Add to Home Screen* — it installs as a
    standalone app and the workout logger keeps working offline.
 
@@ -270,37 +271,53 @@ Two notes worth knowing:
 - Open Food Facts asks callers to identify themselves — set
   `OPENFOODFACTS_USER_AGENT` to something naming your deployment.
 
-### Cross-device sync (optional)
+### Accounts (optional)
 
-Not needed to ship — the app is single-device without it and nothing is
-degraded. Turn it on when you want the same data on your phone *and* your
-laptop, or history that survives losing the device.
+Not needed to ship — the app is fully usable signed out, and nothing about it is
+degraded. An account is what makes the data *yours* rather than this browser's:
+the same history on your phone and your laptop, and a way back if you lose the
+device.
 
-Set two environment variables and it appears in Settings:
+One environment variable turns it on:
 
 ```
 DATABASE_URL=postgresql://…-pooler.…neon.tech/neondb?sslmode=require
-FITME_SYNC_SECRET=<a long random string>
 ```
 
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-```
+The tables are created on first use, so there is no migration step. Sign-in is
+offered on the setup screen as well as in Settings — installing on a second
+device should not mean answering the setup questions again, and it does not: the
+account's copy comes down profile and all.
 
-The table is created on first use, so there is no migration step. The stored
-value is the same state document the client already keeps, with the same
-`updatedAt` stamp the local journal uses — which makes reconciliation one
-comparison rather than a merge algorithm. It pulls on load, adopts the remote
+**How it works.** Email and password. Passwords are stored as `scrypt` digests
+(N=32768, r=8, p=1) with a per-password salt and the parameters recorded inline,
+so the cost can be raised later without invalidating existing hashes. A session
+is a 256-bit random token in an HttpOnly, SameSite=Lax, Secure cookie; the
+database holds only its SHA-256, so a leaked database yields neither passwords
+nor usable sessions. An unknown address and a wrong password give byte-identical
+answers, so the login form is not a membership oracle. Sign-up and sign-in are
+rate limited per address and per account.
+
+The stored value is the same state document the client already keeps, with the
+same `updatedAt` stamp the local journal uses — which makes reconciliation one
+comparison rather than a merge algorithm. It pulls on load, adopts the account's
 copy only if it is genuinely newer, and pushes when the page is hidden.
 
-**Two things to be clear about.** Authentication is a single shared key: anyone
-holding it has full read and write access. That is the right size of solution
-for one person with two devices, and it is what the UI says. And the write is
-last-write-wins by timestamp — correct for one person, wrong for a team, so a
-genuinely concurrent edit on another device loses. The server refuses an older
-push rather than silently clobbering, and hands the newer document back, so that
-case is visible instead of quiet. Real accounts and per-entity rows with a change
-log are the upgrade path; the row is already keyed by user.
+**Three things to be clear about.**
+
+The write is last-write-wins by timestamp — correct for one person on two
+devices, wrong for a team, so a genuinely concurrent edit on another device
+loses. The server refuses an older push rather than silently clobbering it, and
+hands the newer document back, so that case is visible rather than quiet.
+Per-entity rows with a change log are the upgrade path.
+
+Signing in for the first time on a device that already has data cannot merge the
+two. It asks which copy to keep, showing what each holds, rather than guessing.
+
+**There is no password reset.** Adding one means an email provider, a domain to
+verify and a token flow, and none of that is built. Losing the password means
+losing the account's copy — the device keeps its own, and Settings → Your data
+exports a backup.
 
 ---
 

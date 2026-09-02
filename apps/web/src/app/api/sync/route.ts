@@ -1,70 +1,41 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { isSyncConfigured, readDocument, writeDocument } from "@/lib/db";
+import { isAuthConfigured, readDocument, writeDocument } from "@/lib/db";
+import { currentUser, unconfigured, unreachable } from "@/lib/session";
 
 /**
- * Cross-device sync.
+ * The account's copy of the data.
  *
- * Authentication is a single shared secret, which is the right size of solution
- * for a personal app with one user and two devices: anyone holding the secret
- * has full access, and that is the whole security model. It is stated plainly
- * in the UI. Multi-user would need real accounts, and nothing here forecloses
- * that — the row is already keyed by user.
+ * Authentication is the session cookie, so a document is reachable only by the
+ * account that owns it — the row is keyed by user id and there is no way to ask
+ * for anyone else's. This replaced a single shared secret, which could not tell
+ * two people apart and gave whoever held it everything.
  */
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-const authorised = (request: Request): boolean => {
-  const expected = process.env.FITME_SYNC_SECRET;
-  if (!expected) return false;
-
-  const header = request.headers.get("authorization") ?? "";
-  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!provided) return false;
-
-  // Compare over fixed-length digests so the check does not leak the secret's
-  // length, and so timingSafeEqual never throws on a mismatched size.
-  const a = Buffer.from(provided.padEnd(64, "\0").slice(0, 64));
-  const b = Buffer.from(expected.padEnd(64, "\0").slice(0, 64));
-  return timingSafeEqual(a, b) && provided.length === expected.length;
-};
-
-const unconfigured = (): NextResponse =>
-  NextResponse.json(
-    {
-      error: "not_configured",
-      message:
-        "Sync is not set up on this deployment. It needs DATABASE_URL and FITME_SYNC_SECRET; without them everything still works, but only on this device.",
-    },
-    { status: 503 },
-  );
-
 const denied = (): NextResponse =>
   NextResponse.json(
-    { error: "unauthorised", message: "That sync key is not right." },
+    { error: "unauthorised", message: "Sign in to sync this device." },
     { status: 401 },
   );
 
-export async function GET(request: Request): Promise<NextResponse> {
-  if (!isSyncConfigured()) return unconfigured();
-  if (!authorised(request)) return denied();
+export async function GET(): Promise<NextResponse> {
+  if (!isAuthConfigured()) return unconfigured();
 
   try {
-    const stored = await readDocument();
+    const user = await currentUser();
+    if (!user) return denied();
+    const stored = await readDocument(user.id);
     return NextResponse.json(stored ?? { document: null, updatedAt: null });
   } catch {
-    return NextResponse.json(
-      { error: "unreachable", message: "Could not reach the sync database." },
-      { status: 502 },
-    );
+    return unreachable();
   }
 }
 
 export async function PUT(request: Request): Promise<NextResponse> {
-  if (!isSyncConfigured()) return unconfigured();
-  if (!authorised(request)) return denied();
+  if (!isAuthConfigured()) return unconfigured();
 
   let body: { document?: { updatedAt?: string } };
   try {
@@ -86,23 +57,19 @@ export async function PUT(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const outcome = await writeDocument(document, updatedAt);
+    const user = await currentUser();
+    if (!user) return denied();
+
+    const outcome = await writeDocument(user.id, document, updatedAt);
     if (outcome.status === "stale") {
       // Another device has newer data. Hand it back rather than clobbering it.
       return NextResponse.json(
-        {
-          error: "stale",
-          message: "Another device has newer data.",
-          stored: outcome.stored,
-        },
+        { error: "stale", message: "Another device has newer data.", stored: outcome.stored },
         { status: 409 },
       );
     }
     return NextResponse.json({ updatedAt: outcome.updatedAt });
   } catch {
-    return NextResponse.json(
-      { error: "unreachable", message: "Could not reach the sync database." },
-      { status: 502 },
-    );
+    return unreachable();
   }
 }
