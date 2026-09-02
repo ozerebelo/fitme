@@ -176,7 +176,8 @@ environment variable is the whole deployment.
    error means this setting, nothing else. With it set, Next.js is detected,
    the npm workspace is installed from the repository root, and `@fitme/core`
    is compiled as part of the app build.
-2. Set `ANTHROPIC_API_KEY` (see `apps/web/.env.example` for the optional ones).
+2. Set `ANTHROPIC_API_KEY`, and `DATABASE_URL` + `FITME_SYNC_SECRET` if you want
+   cross-device sync (see below). `apps/web/.env.example` lists the rest.
 3. Deploy. Open it on your phone and use *Add to Home Screen* — it installs as a
    standalone app and the workout logger keeps working offline.
 
@@ -188,25 +189,37 @@ Two notes worth knowing:
 - Open Food Facts asks callers to identify themselves — set
   `OPENFOODFACTS_USER_AGENT` to something naming your deployment.
 
-### Do you need a database?
+### Cross-device sync (optional)
 
-Not to ship. You need one when you want any of: the same data on your phone *and*
-your laptop, history that survives clearing site data or losing the device, or
-more than one user.
+Not needed to ship — the app is single-device without it and nothing is
+degraded. Turn it on when you want the same data on your phone *and* your
+laptop, or history that survives losing the device.
 
-When that time comes, Neon is a good fit and the shape is already set up for it.
-The store sits behind a small interface (`lib/store.ts`) and the whole app state
-is one JSON document with an `updatedAt` stamp, so the first useful version of
-sync is deliberately unambitious:
+Set two environment variables and it appears in Settings:
 
-- Neon Postgres, one row per user: `(user_id, document jsonb, updated_at)`
-- Push on the same hook the local journal already uses (`visibilitychange`),
-  pull on load, newer `updatedAt` wins
-- Auth via a magic link — for a single user, even a shared secret is defensible
+```
+DATABASE_URL=postgresql://…-pooler.…neon.tech/neondb?sslmode=require
+FITME_SYNC_SECRET=<a long random string>
+```
 
-That is last-write-wins, which is correct for one person on two devices and
-wrong for a team. Splitting into per-entity rows with a change log is the upgrade
-path if it ever needs to be more than that; nothing above forecloses it.
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+The table is created on first use, so there is no migration step. The stored
+value is the same state document the client already keeps, with the same
+`updatedAt` stamp the local journal uses — which makes reconciliation one
+comparison rather than a merge algorithm. It pulls on load, adopts the remote
+copy only if it is genuinely newer, and pushes when the page is hidden.
+
+**Two things to be clear about.** Authentication is a single shared key: anyone
+holding it has full read and write access. That is the right size of solution
+for one person with two devices, and it is what the UI says. And the write is
+last-write-wins by timestamp — correct for one person, wrong for a team, so a
+genuinely concurrent edit on another device loses. The server refuses an older
+push rather than silently clobbering, and hands the newer document back, so that
+case is visible instead of quiet. Real accounts and per-entity rows with a change
+log are the upgrade path; the row is already keyed by user.
 
 ---
 

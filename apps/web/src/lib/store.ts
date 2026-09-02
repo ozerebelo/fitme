@@ -135,6 +135,14 @@ export const readJournal = (): AppData | null => {
   }
 };
 
+/**
+ * Mark the document as modified now.
+ *
+ * `updatedAt` means *last modified*, not *last saved*. That distinction is what
+ * makes sync correct: if saving or syncing re-stamped it, a device that had
+ * merely opened the app would look newer than one that had actually logged a
+ * workout, and would overwrite it.
+ */
 export const stamp = (data: AppData): AppData => ({
   ...data,
   updatedAt: new Date().toISOString(),
@@ -157,8 +165,9 @@ export const loadData = async (): Promise<AppData> => {
   return migrate(stored);
 };
 
+/** Persist as-is; `updatedAt` is set when the data changes, not when it is written. */
 export const saveData = async (data: AppData): Promise<boolean> =>
-  idbSet(STORAGE_KEY, stamp(data));
+  idbSet(STORAGE_KEY, data);
 
 /* -------------------------------------------------------------------------- */
 /*                            Export / import                                 */

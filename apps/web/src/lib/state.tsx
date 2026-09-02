@@ -40,11 +40,22 @@ import {
   STORAGE_KEY,
   emptyData,
   loadData,
+  migrate,
   saveData,
   stamp,
   writeJournal,
 } from "./store";
 import { idbSet } from "./idb";
+import {
+  type SyncStatus,
+  hasRealData,
+  newerOf,
+  summarise,
+  pull as pullRemote,
+  push as pushRemote,
+  readSecret,
+  writeSecret,
+} from "./sync";
 
 interface AppState {
   ready: boolean;
@@ -86,6 +97,15 @@ interface AppState {
   regenerateProgram: () => void;
 
   replaceAll: (data: AppData) => void;
+
+  /** Cross-device sync. "off" until a sync key is set. */
+  sync: SyncStatus;
+  syncEnabled: boolean;
+  enableSync: (secret: string) => Promise<void>;
+  disableSync: () => void;
+  syncNow: () => Promise<void>;
+  /** Answer a "choose" state: keep this device's data, or take the synced copy. */
+  resolveSyncChoice: (keep: "local" | "remote") => Promise<void>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -126,13 +146,46 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const dataRef = useRef(data);
   dataRef.current = data;
 
+  const [sync, setSync] = useState<SyncStatus>({ state: "off", lastSyncedAt: null });
+  // Whether a key is actually stored — not derived from the status, or a failed
+  // connection attempt would leave the UI claiming to be connected.
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  const secretRef = useRef<string | null>(null);
+  // Held while the user decides which copy wins on first connect.
+  const pendingRef = useRef<{ secret: string; remote: AppData } | null>(null);
+  // What was last successfully pushed, so an unchanged document is not re-sent.
+  const pushedAtRef = useRef<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    void loadData().then((loaded) => {
+    void loadData().then(async (loaded) => {
       if (cancelled) return;
       setData(loaded);
       hydrated.current = true;
       setReady(true);
+
+      // Pull once on load. The remote only wins if it is genuinely newer, so a
+      // device that has been offline and edited keeps its own work.
+      const secret = readSecret();
+      if (!secret) return;
+      secretRef.current = secret;
+      setSyncEnabled(true);
+      setSync({ state: "syncing", lastSyncedAt: null });
+      const result = await pullRemote(secret);
+      if (cancelled) return;
+      if (!result.ok) {
+        setSync({ state: "error", lastSyncedAt: null, message: result.message });
+        return;
+      }
+      const remote = result.remote?.document ?? null;
+      if (remote && newerOf(loaded, remote) === "remote") {
+        // Keep the remote timestamp: this device did not author those edits.
+        const merged = migrate(remote);
+        setData(merged);
+        void saveData(merged);
+      }
+      pushedAtRef.current = result.remote?.updatedAt ?? null;
+      setSync({ state: "idle", lastSyncedAt: new Date().toISOString() });
     });
     return () => {
       cancelled = true;
@@ -165,9 +218,17 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     const flush = (): void => {
       if (!hydrated.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      const snapshot = stamp(dataRef.current);
+      const snapshot = dataRef.current;
       writeJournal(snapshot);
       void idbSet(STORAGE_KEY, snapshot);
+
+      // Push on the way out too, so the other device sees today's work.
+      const secret = secretRef.current;
+      if (secret && snapshot.updatedAt !== pushedAtRef.current) {
+        void pushRemote(secret, snapshot).then((result) => {
+          if (result.ok) pushedAtRef.current = snapshot.updatedAt;
+        });
+      }
     };
     const onVisibility = (): void => {
       if (document.visibilityState === "hidden") flush();
@@ -181,7 +242,9 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const patch = useCallback((updater: (current: AppData) => AppData) => {
-    setData((current) => updater(current));
+    // Every mutation moves `updatedAt`. This is the only place it advances, so
+    // the timestamp always means "last edited" — which is what sync compares.
+    setData((current) => stamp(updater(current)));
   }, []);
 
   /* ------------------------------- Actions ------------------------------- */
@@ -392,10 +455,146 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     );
   }, [patch]);
 
+  const runSync = useCallback(async (secret: string): Promise<SyncStatus> => {
+    // Deliberately not re-stamped: a device that has only opened the app must
+    // not out-rank one that has actually logged something.
+    const local = dataRef.current;
+    const pulled = await pullRemote(secret);
+    if (!pulled.ok) return { state: "error", lastSyncedAt: null, message: pulled.message };
+
+    const remote = pulled.remote?.document ?? null;
+    if (remote && newerOf(local, remote) === "remote") {
+      const merged = migrate(remote);
+      hydrated.current = true;
+      setData(merged);
+      void saveData(merged);
+      pushedAtRef.current = pulled.remote?.updatedAt ?? null;
+      return { state: "idle", lastSyncedAt: new Date().toISOString() };
+    }
+
+    const pushed = await pushRemote(secret, local);
+    if (pushed.conflict) {
+      return {
+        state: "conflict",
+        lastSyncedAt: null,
+        message: pushed.message ?? "Another device has newer data.",
+      };
+    }
+    if (!pushed.ok) return { state: "error", lastSyncedAt: null, message: pushed.message };
+
+    pushedAtRef.current = local.updatedAt;
+    return { state: "idle", lastSyncedAt: new Date().toISOString() };
+  }, []);
+
+  /**
+   * First connect is the dangerous one.
+   *
+   * Plain last-write-wins would let a freshly set-up device — which by
+   * definition was edited seconds ago — overwrite a phone holding years of
+   * history. So when both sides have real data, stop and ask; when this device
+   * has nothing but an onboarding profile, take the synced copy, which is what
+   * "connect my other device" always means.
+   */
+  const enableSync = useCallback(
+    async (secret: string) => {
+      setSync({ state: "syncing", lastSyncedAt: null });
+
+      const pulled = await pullRemote(secret);
+      if (!pulled.ok) {
+        setSync({ state: "error", lastSyncedAt: null, message: pulled.message });
+        return;
+      }
+
+      const remote = pulled.remote?.document ?? null;
+      const local = dataRef.current;
+
+      if (remote && hasRealData(local) && hasRealData(migrate(remote))) {
+        pendingRef.current = { secret, remote: migrate(remote) };
+        setSync({
+          state: "choose",
+          lastSyncedAt: null,
+          choice: { local: summarise(local), remote: summarise(migrate(remote)) },
+        });
+        return;
+      }
+
+      if (remote) {
+        const merged = migrate(remote);
+        setData(merged);
+        void saveData(merged);
+        pushedAtRef.current = merged.updatedAt;
+      } else {
+        const pushed = await pushRemote(secret, local);
+        if (!pushed.ok) {
+          setSync({ state: "error", lastSyncedAt: null, message: pushed.message });
+          return;
+        }
+        pushedAtRef.current = local.updatedAt;
+      }
+
+      secretRef.current = secret;
+      writeSecret(secret);
+      setSyncEnabled(true);
+      setSync({ state: "idle", lastSyncedAt: new Date().toISOString() });
+    },
+    [],
+  );
+
+  const resolveSyncChoice = useCallback(async (keep: "local" | "remote") => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    pendingRef.current = null;
+    setSync({ state: "syncing", lastSyncedAt: null });
+
+    if (keep === "remote") {
+      setData(pending.remote);
+      void saveData(pending.remote);
+      pushedAtRef.current = pending.remote.updatedAt;
+    } else {
+      // Their data wins, so it has to out-rank what the server holds.
+      const local = stamp(dataRef.current);
+      setData(local);
+      const pushed = await pushRemote(pending.secret, local);
+      if (!pushed.ok) {
+        setSync({ state: "error", lastSyncedAt: null, message: pushed.message });
+        return;
+      }
+      pushedAtRef.current = local.updatedAt;
+    }
+
+    secretRef.current = pending.secret;
+    writeSecret(pending.secret);
+    setSyncEnabled(true);
+    setSync({ state: "idle", lastSyncedAt: new Date().toISOString() });
+  }, []);
+
+  const disableSync = useCallback(() => {
+    secretRef.current = null;
+    pushedAtRef.current = null;
+    writeSecret(null);
+    setSyncEnabled(false);
+    setSync({ state: "off", lastSyncedAt: null });
+  }, []);
+
+  const syncNow = useCallback(async () => {
+    const secret = secretRef.current;
+    if (!secret) return;
+    setSync((current) => ({ ...current, state: "syncing" }));
+    setSync(await runSync(secret));
+  }, [runSync]);
+
+  /**
+   * Wholesale replacement — restoring a backup, or erasing.
+   *
+   * These are explicit user acts, so the document is stamped as modified now:
+   * restoring a year-old backup should win over whatever sync is holding,
+   * rather than being silently reverted on the next pull.
+   */
   const replaceAll = useCallback((next: AppData) => {
     hydrated.current = true;
-    setData(next);
-    void saveData(next);
+    const stamped = stamp(next);
+    setData(stamped);
+    void saveData(stamped);
   }, []);
 
   /* ------------------------------ Derived -------------------------------- */
@@ -499,13 +698,19 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       setProgram,
       regenerateProgram,
       replaceAll,
+      sync,
+      syncEnabled,
+      enableSync,
+      disableSync,
+      syncNow,
+      resolveSyncChoice,
     }),
     [
       ready, data, foods, exercises, exerciseMap, targets, coach, progression, currentWeightKg,
       setProfile, updateSettings, addEntries, updateEntry, removeEntry, addCustomFood,
       rememberFacts, updateFact, forgetFact, markFactsUsed, logWater,
       logWeight, removeMetric, saveSession, removeSession, importSessions, setProgram,
-      regenerateProgram, replaceAll,
+      regenerateProgram, replaceAll, sync, syncEnabled, enableSync, disableSync, syncNow, resolveSyncChoice,
     ],
   );
 
