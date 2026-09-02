@@ -50,6 +50,8 @@ export const DEFAULT_REP_RANGE_POLICY: RepRangePolicy = {
 export type ProgressionState =
   /** Cleared the top of the range at an acceptable effort — add load. */
   | "ready"
+  /** Unloaded bodyweight work that has outgrown the rep range — add load. */
+  | "add_load"
   /** In range; chase another rep at the same load. */
   | "building"
   /** Several sessions at the same load without clearing it. */
@@ -250,6 +252,14 @@ export const assessProgression = (
   const effortOk = meanRpe == null || meanRpe <= policy.targetRpe;
   const cleared = policy.requireAllSets ? minReps >= repMax : maxReps >= repMax;
 
+  /*
+   * Unloaded bodyweight work progresses by reps, not by weight — a push-up
+   * cannot go from nothing to 2.5 kg, and telling someone to do so is worse
+   * than saying nothing. Once external load is on, normal load progression
+   * takes over.
+   */
+  const bodyweight = topWeight === 0 && (exercise?.equipment.includes("bodyweight") ?? false);
+
   const status: ProgressionStatus = {
     ...base,
     state: "building",
@@ -269,6 +279,30 @@ export const assessProgression = (
 
   const repsText = repsAtTop.join(", ");
   const loadText = `${round(topWeight, 1)} kg`;
+
+  /* ------------------------- Unloaded bodyweight -------------------------- */
+  if (bodyweight) {
+    if (cleared && effortOk) {
+      const first = progressionIncrement(exercise, 0, units);
+      return {
+        ...status,
+        state: "add_load",
+        suggestedWeightKg: 0,
+        suggestedReps: repMax,
+        headline: "Time to add weight",
+        detail: `You are clearing ${repsText} at bodyweight, the top of your ${repMin}–${repMax} range. Add about ${round(first, 1)} kg in a belt or vest and drop back to ${repMin} reps — or move to a harder variation.`,
+      };
+    }
+    const target = Math.min(minReps + 1, repMax);
+    return {
+      ...status,
+      state: "building",
+      suggestedWeightKg: 0,
+      suggestedReps: target,
+      headline: `Chase ${target} reps`,
+      detail: `Last session: ${repsText} at bodyweight. Reps are the progression here until every set reaches ${repMax}; then it is time to add load.`,
+    };
+  }
 
   /* ------------------------------ Ready to go up ------------------------- */
   if (cleared && effortOk) {
@@ -353,10 +387,11 @@ export const assessProgression = (
 
 const STATE_ORDER: Record<ProgressionState, number> = {
   ready: 0,
-  stalled: 1,
-  deload: 2,
-  building: 3,
-  new: 4,
+  add_load: 1,
+  stalled: 2,
+  deload: 3,
+  building: 4,
+  new: 5,
 };
 
 export interface BoardOptions extends AssessOptions {
@@ -395,7 +430,10 @@ export const progressionBoard = (
 export const readyToProgress = (
   sessions: WorkoutSession[],
   opts: BoardOptions = {},
-): ProgressionStatus[] => progressionBoard(sessions, opts).filter((s) => s.state === "ready");
+): ProgressionStatus[] =>
+  progressionBoard(sessions, opts).filter(
+    (s) => s.state === "ready" || s.state === "add_load",
+  );
 
 /** Best estimated 1RM trend for a lift, for the progression detail view. */
 export const e1rmSeries = (

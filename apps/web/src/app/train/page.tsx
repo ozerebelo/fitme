@@ -29,6 +29,8 @@ import { ExerciseCard, type PreviousSet } from "@/components/train/ExerciseCard"
 import { ExercisePicker } from "@/components/train/ExercisePicker";
 import { PlateCalculator } from "@/components/train/PlateCalculator";
 import { RestTimer } from "@/components/train/RestTimer";
+import { ExerciseProgress } from "@/components/train/ExerciseProgress";
+import { SessionEditor } from "@/components/train/SessionEditor";
 import {
   Badge,
   Button,
@@ -82,6 +84,14 @@ function Train() {
   const [cardioOpen, setCardioOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [chartFor, setChartFor] = useState<ProgressionStatus | null>(null);
+
+  // Looked up by id rather than held directly, so the sheet re-renders with the
+  // saved session after each edit instead of a stale snapshot.
+  const editing = editingId
+    ? (data.sessions.find((s) => s.id === editingId) ?? null)
+    : null;
 
   const progressionFor = useMemo(
     () => new Map(progression.map((status) => [status.exerciseId, status])),
@@ -219,14 +229,20 @@ function Train() {
 
   if (!active) {
     return (
-      <IdleTrain
-        planned={coach.plannedSession}
-        finished={finished}
-        exerciseMap={exerciseMap}
-        progression={progression}
-        units={profile.units}
-        onStart={startSession}
-      />
+      <>
+        <IdleTrain
+          planned={coach.plannedSession}
+          finished={finished}
+          exerciseMap={exerciseMap}
+          progression={progression}
+          units={profile.units}
+          onStart={startSession}
+          onOpenSession={(session) => setEditingId(session.id)}
+          onOpenExercise={setChartFor}
+        />
+        <SessionEditor session={editing} onClose={() => setEditingId(null)} />
+        <ExerciseProgress status={chartFor} onClose={() => setChartFor(null)} />
+      </>
     );
   }
 
@@ -339,6 +355,12 @@ function Train() {
               )
             }
             units={profile.units}
+            progression={progressionFor.get(menuExercise.id)}
+            onShowChart={() => {
+              const status = progressionFor.get(menuExercise.id);
+              setMenuFor(null);
+              if (status) setChartFor(status);
+            }}
             onRemoveLastSet={() => removeLastSet(menuExercise.id)}
             onRemoveExercise={() => removeExercise(menuExercise.id)}
           />
@@ -354,6 +376,8 @@ function Train() {
           setCardioOpen(false);
         }}
       />
+
+      <ExerciseProgress status={chartFor} onClose={() => setChartFor(null)} />
 
       <Sheet
         open={finishOpen}
@@ -400,12 +424,16 @@ const IdleTrain = ({
   progression,
   units,
   onStart,
+  onOpenSession,
+  onOpenExercise,
 }: {
   planned: ReturnType<typeof useApp>["coach"]["plannedSession"];
   finished: WorkoutSession[];
   exerciseMap: Map<string, Exercise>;
   progression: ProgressionStatus[];
   units: UnitSystem;
+  onOpenSession: (session: WorkoutSession) => void;
+  onOpenExercise: (status: ProgressionStatus) => void;
   onStart: (
     name: string,
     blocks?: { exerciseId: string; sets: number; reps: number; weightKg: number | null }[],
@@ -416,7 +444,7 @@ const IdleTrain = ({
     <PageHeader title="Train" subtitle={`${finished.length} sessions logged`} />
 
     <div className="space-y-4 px-4">
-      <ProgressionBoard statuses={progression} units={units} />
+      <ProgressionBoard statuses={progression} units={units} onOpen={onOpenExercise} />
 
       {planned && (
         <Card>
@@ -506,30 +534,36 @@ const IdleTrain = ({
               {finished.slice(0, 15).map((session) => {
                 const groups = groupSets(session.sets);
                 return (
-                  <li key={session.id} className="px-4 py-3">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="flex items-center gap-2 truncate font-medium">
-                        {session.name}
-                        {session.source === "strong" && <Badge>Strong</Badge>}
+                  <li key={session.id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenSession(session)}
+                      className="w-full px-4 py-3 text-left transition-colors hover:bg-surface-2"
+                    >
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="flex items-center gap-2 truncate font-medium">
+                          {session.name}
+                          {session.source === "strong" && <Badge>Strong</Badge>}
+                        </span>
+                        <span className="shrink-0 text-xs text-faint">
+                          {formatDayLabel(session.date)}
+                        </span>
                       </span>
-                      <span className="shrink-0 text-xs text-faint">
-                        {formatDayLabel(session.date)}
+                      <span className="mt-0.5 block truncate text-xs text-faint">
+                        {groups
+                          .slice(0, 4)
+                          .map(
+                            (g) =>
+                              `${exerciseMap.get(g.exerciseId)?.name ?? g.exerciseId} ${g.sets.length}×`,
+                          )
+                          .join(" · ")}
+                        {groups.length > 4 ? ` +${groups.length - 4}` : ""}
                       </span>
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-faint">
-                      {groups
-                        .slice(0, 4)
-                        .map(
-                          (g) =>
-                            `${exerciseMap.get(g.exerciseId)?.name ?? g.exerciseId} ${g.sets.length}×`,
-                        )
-                        .join(" · ")}
-                      {groups.length > 4 ? ` +${groups.length - 4}` : ""}
-                    </p>
-                    <p className="tabular mt-1 text-xs text-muted">
-                      {session.sets.filter(isWorkingSet).length} sets ·{" "}
-                      {Math.round(volumeLoad(session.sets)).toLocaleString()} kg volume
-                    </p>
+                      <span className="tabular mt-1 block text-xs text-muted">
+                        {session.sets.filter(isWorkingSet).length} sets ·{" "}
+                        {Math.round(volumeLoad(session.sets)).toLocaleString()} kg volume
+                      </span>
+                    </button>
                   </li>
                 );
               })}
@@ -553,12 +587,14 @@ const IdleTrain = ({
 const ProgressionBoard = ({
   statuses,
   units,
+  onOpen,
 }: {
   statuses: ProgressionStatus[];
   units: UnitSystem;
+  onOpen: (status: ProgressionStatus) => void;
 }) => {
   const [showAll, setShowAll] = useState(false);
-  const ready = statuses.filter((s) => s.state === "ready");
+  const ready = statuses.filter((s) => s.state === "ready" || s.state === "add_load");
   const attention = statuses.filter((s) => s.state === "stalled" || s.state === "deload");
 
   if (statuses.length === 0) return null;
@@ -602,11 +638,16 @@ const ProgressionBoard = ({
 
       <ul className="mt-3 divide-y divide-border">
         {shown.map((status) => (
-          <li key={status.exerciseId} className="flex items-center gap-3 py-2.5">
+          <li key={status.exerciseId}>
+            <button
+              type="button"
+              onClick={() => onOpen(status)}
+              className="flex w-full items-center gap-3 py-2.5 text-left"
+            >
             <span
               className={clsx(
                 "h-2 w-2 shrink-0 rounded-full",
-                status.state === "ready" && "bg-brand",
+                (status.state === "ready" || status.state === "add_load") && "bg-brand",
                 status.state === "stalled" && "bg-warn",
                 status.state === "deload" && "bg-warn",
                 status.state === "building" && "bg-faint",
@@ -623,10 +664,12 @@ const ProgressionBoard = ({
                 {status.range[0]}–{status.range[1]} target
               </span>
             </span>
-            {status.state === "ready" && status.suggestedWeightKg != null ? (
+            {status.state === "ready" && status.suggestedWeightKg ? (
               <span className="tabular shrink-0 text-sm font-semibold text-brand">
                 → {displayWeight(status.suggestedWeightKg, units)} {unitLabel(units)}
               </span>
+            ) : status.state === "add_load" ? (
+              <span className="shrink-0 text-sm font-semibold text-brand">add load</span>
             ) : (
               <span className="shrink-0 text-xs text-faint">
                 {status.state === "stalled"
@@ -636,6 +679,7 @@ const ProgressionBoard = ({
                     : `chase ${status.suggestedReps}`}
               </span>
             )}
+            </button>
           </li>
         ))}
       </ul>
@@ -691,6 +735,8 @@ const ExerciseMenu = ({
   barWeightKg,
   currentTopWeight,
   units,
+  progression,
+  onShowChart,
   onRemoveLastSet,
   onRemoveExercise,
 }: {
@@ -699,6 +745,8 @@ const ExerciseMenu = ({
   barWeightKg: number;
   currentTopWeight: number;
   units: UnitSystem;
+  progression?: ProgressionStatus;
+  onShowChart: () => void;
   onRemoveLastSet: () => void;
   onRemoveExercise: () => void;
 }) => {
@@ -727,6 +775,12 @@ const ExerciseMenu = ({
           </h3>
           <PlateCalculator targetKg={currentTopWeight} barKg={barWeightKg} />
         </div>
+      )}
+
+      {progression && (
+        <Button full onClick={onShowChart}>
+          See the progression chart
+        </Button>
       )}
 
       <div>

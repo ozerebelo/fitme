@@ -136,6 +136,47 @@ describe("the question: should the weight go up?", () => {
   });
 });
 
+describe("bodyweight lifts", () => {
+  const pullUp = (date: string, reps: number[], rpe?: number) =>
+    makeSession(
+      date,
+      reps.map((r) => makeSet("pull-up", 0, r, rpe != null ? { rpe } : {})),
+    );
+
+  it("progresses by reps, not by inventing a load", () => {
+    const status = assessProgression([pullUp(at(3), [8, 7, 6], 8)], "pull-up", { asOf: today });
+    expect(status.state).toBe("building");
+    expect(status.suggestedWeightKg).toBe(0);
+    expect(status.suggestedReps).toBe(7);
+    expect(status.headline).toMatch(/Chase 7 reps/);
+    // The old behaviour told people to load 2.5 kg onto a pull-up.
+    expect(status.detail).not.toMatch(/2\.5 kg/);
+  });
+
+  it("suggests external load once the range is owned", () => {
+    const status = assessProgression([pullUp(at(3), [10, 10, 10], 8)], "pull-up", { asOf: today });
+    expect(status.state).toBe("add_load");
+    expect(status.headline).toMatch(/add weight/i);
+    expect(status.detail).toMatch(/belt or vest/);
+  });
+
+  it("reverts to load progression once weight is being carried", () => {
+    const weighted = makeSession(at(3), [
+      makeSet("pull-up", 10, 10, { rpe: 8 }),
+      makeSet("pull-up", 10, 10, { rpe: 8 }),
+      makeSet("pull-up", 10, 10, { rpe: 8 }),
+    ]);
+    const status = assessProgression([weighted], "pull-up", { asOf: today });
+    expect(status.state).toBe("ready");
+    expect(status.suggestedWeightKg).toBeGreaterThan(10);
+  });
+
+  it("counts a lift ready to be loaded as ready to progress", () => {
+    const ready = readyToProgress([pullUp(at(3), [10, 10, 10], 8)], { asOf: today });
+    expect(ready.map((r) => r.exerciseId)).toContain("pull-up");
+  });
+});
+
 describe("stalls and back-offs", () => {
   it("flags a lift sitting at the same weight", () => {
     const status = assess([

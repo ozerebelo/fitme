@@ -20,6 +20,7 @@ import {
   Segmented,
   TextInput,
 } from "@/components/ui";
+import { RoutineEditor } from "@/components/coach/RoutineEditor";
 import { SparkIcon } from "@/components/icons";
 
 type Tab = "insights" | "plan" | "ask";
@@ -42,6 +43,8 @@ function Coach() {
   const { data, coach, targets, currentWeightKg, exerciseMap, setProgram } = useApp();
   const profile = data.profile!;
   const [tab, setTab] = useState<Tab>("insights");
+  const [editingDayId, setEditingDayId] = useState<string | null>(null);
+  const editingDay = data.program?.days.find((d) => d.id === editingDayId) ?? null;
 
   const briefing = useMemo(() => {
     const context: CoachContext = {
@@ -105,10 +108,19 @@ function Coach() {
 
                 {data.program.days.map((day) => (
                   <Card key={day.id}>
-                    <div className="flex items-baseline justify-between">
+                    <div className="flex items-baseline justify-between gap-2">
                       <h3 className="font-semibold">{day.name}</h3>
-                      <span className="text-xs text-faint">
-                        ~{sessionMinutes(day.blocks)} min
+                      <span className="flex shrink-0 items-baseline gap-3">
+                        <span className="text-xs text-faint">
+                          ~{sessionMinutes(day.blocks)} min
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingDayId(day.id)}
+                          className="text-xs font-medium text-muted hover:text-text"
+                        >
+                          Edit
+                        </button>
                       </span>
                     </div>
                     <ul className="mt-3 space-y-2">
@@ -165,6 +177,14 @@ function Coach() {
 
         {tab === "ask" && <AskCoach briefing={briefing} />}
       </div>
+
+      {data.program && (
+        <RoutineEditor
+          program={data.program}
+          day={editingDay}
+          onClose={() => setEditingDayId(null)}
+        />
+      )}
     </div>
   );
 }

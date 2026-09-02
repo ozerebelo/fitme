@@ -436,10 +436,12 @@ export const importStrongCsv = (
   const sessions: WorkoutSession[] = fresh
     .filter((d) => d.sets.length > 0 || d.cardio.length > 0)
     .map((d) => {
-      const endedAt =
-        d.durationMinutes > 0
-          ? new Date(new Date(d.startedAt).getTime() + d.durationMinutes * 60_000).toISOString()
-          : undefined;
+      // Always set an end time. `endedAt` is what marks a session finished
+      // everywhere else, so a missing Duration column would otherwise hide the
+      // workout from history, records and progression entirely.
+      const endedAt = new Date(
+        new Date(d.startedAt).getTime() + Math.max(d.durationMinutes, 1) * 60_000,
+      ).toISOString();
       return {
         id: cryptoId(),
         date: d.date,

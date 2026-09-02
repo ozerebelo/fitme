@@ -248,6 +248,7 @@ const STATE_STYLE: Record<
   { border: string; text: string; label: string }
 > = {
   ready: { border: "border-brand/40 bg-brand/10", text: "text-brand", label: "Ready" },
+  add_load: { border: "border-brand/40 bg-brand/10", text: "text-brand", label: "Add load" },
   building: { border: "border-border bg-surface-2", text: "text-muted", label: "Building" },
   stalled: { border: "border-warn/40 bg-warn/10", text: "text-warn", label: "Stalled" },
   deload: { border: "border-warn/40 bg-warn/10", text: "text-warn", label: "Back off" },
