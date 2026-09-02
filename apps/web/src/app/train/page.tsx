@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { Exercise, SetLog, UnitSystem, WorkoutSession } from "@fitme/core";
+import type {
+  Exercise,
+  ProgressionStatus,
+  SetLog,
+  UnitSystem,
+  WorkoutSession,
+} from "@fitme/core";
 import {
   CARDIO_EXERCISES,
   cryptoId,
@@ -36,7 +42,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { DumbbellIcon, PlusIcon, UploadIcon } from "@/components/icons";
-import { duration, minutesLabel, unitLabel } from "@/lib/format";
+import { clsx, duration, minutesLabel, unitLabel } from "@/lib/format";
 
 function Train() {
   const {
@@ -44,6 +50,7 @@ function Train() {
     exercises,
     exerciseMap,
     coach,
+    progression,
     currentWeightKg,
     saveSession,
     removeSession,
@@ -75,6 +82,11 @@ function Train() {
   const [cardioOpen, setCardioOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
+
+  const progressionFor = useMemo(
+    () => new Map(progression.map((status) => [status.exerciseId, status])),
+    [progression],
+  );
 
   /* ------------------------------ Session ops ---------------------------- */
 
@@ -141,17 +153,30 @@ function Train() {
 
   const addExercise = (exercise: Exercise): void => {
     if (!active) return;
-    const suggestion = lastPerformance(finished, exercise.id);
-    const template = suggestion?.topSet;
+    // Prefill the weight the progression engine says to use, not simply what
+    // was done last time — otherwise a cleared rep range still needs a manual
+    // edit before the bar is loaded, which is the whole friction being removed.
+    const status = progressionFor.get(exercise.id);
+    const template = lastPerformance(finished, exercise.id)?.topSet;
     const startingSets: SetLog[] = Array.from({ length: 3 }, () => ({
       id: cryptoId(),
       exerciseId: exercise.id,
-      weightKg: template?.weightKg ?? 0,
-      reps: template?.reps ?? (exercise.defaultRepRange?.[1] ?? 8),
+      weightKg: status?.suggestedWeightKg ?? template?.weightKg ?? 0,
+      reps: status?.suggestedReps ?? template?.reps ?? (exercise.defaultRepRange?.[1] ?? 8),
       completed: false,
     }));
     patchSession({ sets: [...active.sets, ...startingSets] });
     setPickerOpen(false);
+  };
+
+  /** Apply a suggested load to every unfinished set of one exercise. */
+  const applyWeight = (exerciseId: string, weightKg: number): void => {
+    if (!active) return;
+    patchSession({
+      sets: active.sets.map((s) =>
+        s.exerciseId === exerciseId && !s.completed ? { ...s, weightKg } : s,
+      ),
+    });
   };
 
   const removeExercise = (exerciseId: string): void => {
@@ -198,6 +223,8 @@ function Train() {
         planned={coach.plannedSession}
         finished={finished}
         exerciseMap={exerciseMap}
+        progression={progression}
+        units={profile.units}
         onStart={startSession}
       />
     );
@@ -234,10 +261,12 @@ function Train() {
               previous={previous}
               record={records.get(exerciseId)}
               units={profile.units}
+              progression={progressionFor.get(exerciseId)}
               onChange={updateSet}
               onAddSet={addSet}
               onCompleteSet={completeSet}
               onOpenMenu={() => setMenuFor(exerciseId)}
+              onApplyWeight={(weightKg) => applyWeight(exerciseId, weightKg)}
             />
           );
         })}
@@ -368,11 +397,15 @@ const IdleTrain = ({
   planned,
   finished,
   exerciseMap,
+  progression,
+  units,
   onStart,
 }: {
   planned: ReturnType<typeof useApp>["coach"]["plannedSession"];
   finished: WorkoutSession[];
   exerciseMap: Map<string, Exercise>;
+  progression: ProgressionStatus[];
+  units: UnitSystem;
   onStart: (
     name: string,
     blocks?: { exerciseId: string; sets: number; reps: number; weightKg: number | null }[],
@@ -383,6 +416,8 @@ const IdleTrain = ({
     <PageHeader title="Train" subtitle={`${finished.length} sessions logged`} />
 
     <div className="space-y-4 px-4">
+      <ProgressionBoard statuses={progression} units={units} />
+
       {planned && (
         <Card>
           <div className="flex items-baseline justify-between">
@@ -505,6 +540,108 @@ const IdleTrain = ({
     </div>
   </div>
 );
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What is due to go up.
+ *
+ * Answering "which weights should I add to today?" across a whole programme is
+ * the thing double progression makes possible and nobody reliably does in their
+ * head, so it gets its own card at the top of the Train tab.
+ */
+const ProgressionBoard = ({
+  statuses,
+  units,
+}: {
+  statuses: ProgressionStatus[];
+  units: UnitSystem;
+}) => {
+  const [showAll, setShowAll] = useState(false);
+  const ready = statuses.filter((s) => s.state === "ready");
+  const attention = statuses.filter((s) => s.state === "stalled" || s.state === "deload");
+
+  if (statuses.length === 0) return null;
+
+  const shown = showAll ? statuses : [...ready, ...attention];
+  if (shown.length === 0 && !showAll) {
+    return (
+      <Card>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Progressive overload</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted">
+              Nothing has cleared its rep range yet — keep chasing reps and the weights
+              will come up on their own.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setShowAll(true)}>
+            All lifts
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="font-semibold">
+          {ready.length > 0
+            ? `${ready.length} ${ready.length === 1 ? "lift is" : "lifts are"} ready to go up`
+            : "Progressive overload"}
+        </h2>
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="shrink-0 text-xs font-medium text-muted hover:text-text"
+        >
+          {showAll ? "Just what needs action" : `All ${statuses.length}`}
+        </button>
+      </div>
+
+      <ul className="mt-3 divide-y divide-border">
+        {shown.map((status) => (
+          <li key={status.exerciseId} className="flex items-center gap-3 py-2.5">
+            <span
+              className={clsx(
+                "h-2 w-2 shrink-0 rounded-full",
+                status.state === "ready" && "bg-brand",
+                status.state === "stalled" && "bg-warn",
+                status.state === "deload" && "bg-warn",
+                status.state === "building" && "bg-faint",
+              )}
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">{status.exerciseName}</span>
+              <span className="block truncate text-xs text-faint">
+                {status.lastSets.length > 0
+                  ? `${displayWeight(status.lastSets[0]!.weightKg, units)} ${unitLabel(units)} × ${status.lastSets.map((s) => s.reps).join(", ")}`
+                  : "—"}
+                {" · "}
+                {status.range[0]}–{status.range[1]} target
+              </span>
+            </span>
+            {status.state === "ready" && status.suggestedWeightKg != null ? (
+              <span className="tabular shrink-0 text-sm font-semibold text-brand">
+                → {displayWeight(status.suggestedWeightKg, units)} {unitLabel(units)}
+              </span>
+            ) : (
+              <span className="shrink-0 text-xs text-faint">
+                {status.state === "stalled"
+                  ? `${status.sessionsAtWeight} sessions`
+                  : status.state === "deload"
+                    ? "back off"
+                    : `chase ${status.suggestedReps}`}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+};
 
 /* -------------------------------------------------------------------------- */
 

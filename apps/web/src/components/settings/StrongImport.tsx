@@ -1,11 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { StrongImportResult, WeightUnit } from "@fitme/core";
-import { formatDayLabel, importStrongCsv } from "@fitme/core";
+import type { DerivedRoutine, StrongImportResult, WeightUnit } from "@fitme/core";
+import {
+  deriveRoutinesFromHistory,
+  formatDayLabel,
+  importStrongCsv,
+  programFromRoutines,
+} from "@fitme/core";
 import { useApp } from "@/lib/state";
 import { Badge, Button, Card, Segmented, Sheet, Spinner } from "@/components/ui";
-import { UploadIcon } from "@/components/icons";
+import { CheckIcon, UploadIcon } from "@/components/icons";
 
 /**
  * One-time import of a Strong app CSV export.
@@ -18,7 +23,7 @@ import { UploadIcon } from "@/components/icons";
  * silently doubled volume count that would mislead the coach for months.
  */
 export const StrongImport = () => {
-  const { data, exercises, currentWeightKg, importSessions } = useApp();
+  const { data, exercises, exerciseMap, currentWeightKg, importSessions, setProgram } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [open, setOpen] = useState(false);
@@ -27,6 +32,8 @@ export const StrongImport = () => {
   const [unit, setUnit] = useState<WeightUnit | null>(null);
   const [result, setResult] = useState<StrongImportResult | null>(null);
   const [done, setDone] = useState<number | null>(null);
+  const [routines, setRoutines] = useState<DerivedRoutine[] | null>(null);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
 
   const existingIds = data.sessions
     .map((s) => s.externalId)
@@ -66,9 +73,31 @@ export const StrongImport = () => {
     if (!result) return;
     importSessions(result.sessions, result.newExercises);
     setDone(result.sessions.length);
+
+    // Offer back the routines they have actually been running. Retyping a
+    // programme that is already sitting in the history is pure friction.
+    const merged = [...data.sessions, ...result.sessions];
+    const catalog = new Map(exerciseMap);
+    for (const exercise of result.newExercises) catalog.set(exercise.id, exercise);
+    const derived = deriveRoutinesFromHistory(merged, {
+      policy: data.settings.repRange,
+      catalog,
+      limit: 3,
+    });
+    setRoutines(derived.length > 0 ? derived : null);
+    setChosen(new Set(derived.map((r) => r.name)));
+
     setOpen(false);
     setCsv(null);
     setResult(null);
+  };
+
+  const createRoutines = (): void => {
+    if (!routines || !data.profile) return;
+    const selected = routines.filter((r) => chosen.has(r.name));
+    if (selected.length === 0) return;
+    setProgram(programFromRoutines(selected, data.profile));
+    setRoutines(null);
   };
 
   const sample = result?.sessions
@@ -117,6 +146,77 @@ export const StrongImport = () => {
           {parsing ? "Reading…" : "Choose strong.csv"}
         </Button>
       </Card>
+
+      {routines && (
+        <Card>
+          <h3 className="font-semibold">Keep the routines you have been running</h3>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted">
+            Taken from your most recent session under each name — same exercises, same
+            order, same set counts. Rep targets come from your own range settings.
+          </p>
+
+          <ul className="mt-3 space-y-2">
+            {routines.map((routine) => {
+              const selected = chosen.has(routine.name);
+              return (
+                <li
+                  key={routine.name}
+                  className={`rounded-xl border p-3 transition-colors ${
+                    selected ? "border-brand/40 bg-brand/10" : "border-border"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={selected}
+                    onClick={() =>
+                      setChosen((current) => {
+                        const next = new Set(current);
+                        if (next.has(routine.name)) next.delete(routine.name);
+                        else next.add(routine.name);
+                        return next;
+                      })
+                    }
+                    className="flex w-full items-start gap-3 text-left"
+                  >
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
+                        selected ? "border-brand bg-brand text-black" : "border-border"
+                      }`}
+                    >
+                      {selected && <CheckIcon className="h-3.5 w-3.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-baseline gap-2">
+                        <span className="font-medium">{routine.name}</span>
+                        <span className="text-xs text-faint">
+                          {routine.day.blocks.length} exercises · last{" "}
+                          {formatDayLabel(routine.lastPerformed)}
+                        </span>
+                      </span>
+                      <span className="mt-1 block text-xs leading-relaxed text-muted">
+                        {routine.day.blocks
+                          .map((b, i) => `${b.sets}× ${routine.exerciseNames[i]}`)
+                          .join(" · ")}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Button onClick={() => setRoutines(null)}>Not now</Button>
+            <Button variant="primary" disabled={chosen.size === 0} onClick={createRoutines}>
+              Use {chosen.size} {chosen.size === 1 ? "routine" : "routines"}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-faint">
+            This replaces any generated plan. Your logged history is untouched either way.
+          </p>
+        </Card>
+      )}
 
       <Sheet
         open={open}

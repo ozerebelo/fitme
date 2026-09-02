@@ -160,16 +160,32 @@ interface Matcher {
 }
 
 /**
- * Three-stage matching: exact normalised name or alias, then order-insensitive
- * token match (so `Bench Press (Barbell)` finds `Barbell Bench Press`), then a
- * token-overlap score for near misses like `Lat Pulldown - Wide Grip`.
+ * Name matching, in order of confidence:
+ *
+ *   1. exact name or alias
+ *   2. same tokens in a different order — `Bench Press (Barbell)` = `Barbell Bench Press`
+ *   3. every token of a catalog entry present in the query, most specific first.
+ *      This is what real exports need: `Triceps Pushdown (Cable - Straight Bar)`
+ *      contains all of `Triceps Pushdown (Cable)`. Ranking by token count is
+ *      what stops `Incline Bench Press (Barbell)` collapsing into flat bench —
+ *      the incline entry covers more of the query, so it wins.
+ *   4. the reverse: a short query fully contained in one catalog entry, so a
+ *      generic `Chest Fly` lands on a fly variation rather than inventing a
+ *      duplicate exercise with no history behind it.
+ *   5. a token-overlap score, for near misses neither containment rule catches.
  */
 export const createExerciseMatcher = (exercises: Exercise[]): Matcher => {
   const byName = buildNameIndex(exercises);
   const byTokens = new Map<string, Exercise>();
+  const labelled: { exercise: Exercise; tokens: string[] }[] = [];
+
   for (const e of exercises) {
-    const keys = [e.name, ...(e.aliases ?? [])].map(exerciseTokenKey);
-    for (const key of keys) if (!byTokens.has(key)) byTokens.set(key, e);
+    for (const label of [e.name, ...(e.aliases ?? [])]) {
+      const key = exerciseTokenKey(label);
+      if (!byTokens.has(key)) byTokens.set(key, e);
+      const tokens = normalizeExerciseName(label).split(" ").filter(Boolean);
+      if (tokens.length > 0) labelled.push({ exercise: e, tokens });
+    }
   }
 
   return {
@@ -178,29 +194,53 @@ export const createExerciseMatcher = (exercises: Exercise[]): Matcher => {
       const exact = byName.get(normalized);
       if (exact) return exact;
 
-      const tokens = byTokens.get(exerciseTokenKey(name));
-      if (tokens) return tokens;
+      const tokenMatch = byTokens.get(exerciseTokenKey(name));
+      if (tokenMatch) return tokenMatch;
 
-      const queryTokens = new Set(normalized.split(" ").filter(Boolean));
-      if (queryTokens.size === 0) return null;
+      const queryTokens = normalized.split(" ").filter(Boolean);
+      if (queryTokens.length === 0) return null;
+      const querySet = new Set(queryTokens);
 
-      let best: Exercise | null = null;
-      let bestScore = 0;
-      for (const candidate of exercises) {
-        for (const label of [candidate.name, ...(candidate.aliases ?? [])]) {
-          const candidateTokens = normalizeExerciseName(label).split(" ").filter(Boolean);
-          if (candidateTokens.length === 0) continue;
-          const overlap = candidateTokens.filter((t) => queryTokens.has(t)).length;
-          // Jaccard-ish: reward overlap, penalise size mismatch in both directions.
-          const score =
-            overlap / (candidateTokens.length + queryTokens.size - overlap);
-          if (score > bestScore) {
-            bestScore = score;
-            best = candidate;
+      // 3. Catalog entry fully contained in the query — most specific wins.
+      let covered: Exercise | null = null;
+      let coveredTokens = 0;
+      for (const { exercise, tokens } of labelled) {
+        if (tokens.length < 2 || tokens.length <= coveredTokens) continue;
+        if (tokens.every((t) => querySet.has(t))) {
+          covered = exercise;
+          coveredTokens = tokens.length;
+        }
+      }
+      if (covered) return covered;
+
+      // 4. Query fully contained in a catalog entry — fewest extra tokens wins.
+      let contained: Exercise | null = null;
+      let extra = Number.POSITIVE_INFINITY;
+      if (queryTokens.length >= 2) {
+        for (const { exercise, tokens } of labelled) {
+          const set = new Set(tokens);
+          if (!queryTokens.every((t) => set.has(t))) continue;
+          const surplus = tokens.length - queryTokens.length;
+          if (surplus < extra) {
+            contained = exercise;
+            extra = surplus;
           }
         }
       }
-      // 0.7 keeps "Incline Bench Press" from collapsing into "Bench Press".
+      if (contained) return contained;
+
+      // 5. Overlap score for everything else.
+      let best: Exercise | null = null;
+      let bestScore = 0;
+      for (const { exercise, tokens } of labelled) {
+        const overlap = tokens.filter((t) => querySet.has(t)).length;
+        const score = overlap / (tokens.length + querySet.size - overlap);
+        if (score > bestScore) {
+          bestScore = score;
+          best = exercise;
+        }
+      }
+      // 0.7 keeps unrelated movements from collapsing into one another.
       return bestScore >= 0.7 ? best : null;
     },
   };

@@ -1,7 +1,7 @@
 import type { Exercise, SetLog, UnitSystem, WorkoutSession } from "./types";
 import { EXERCISE_BY_ID } from "./data/exercises";
 import { exerciseHistory, isWorkingSet, setE1RM } from "./strength";
-import { loadIncrement, round, snapLoad } from "./units";
+import { round } from "./units";
 import { type DateKey, daysBetween, toDateKey } from "./date";
 
 /**
@@ -100,30 +100,88 @@ export const resolveRepRange = (
 };
 
 /**
+ * The load steps a lift can actually be loaded in.
+ *
+ * A suggestion of 13.75 kg on a dumbbell lift is useless: dumbbells go 12, 14,
+ * 16. Increments therefore come from the equipment, not from a single global
+ * constant — `smallest` is the finest real step, `standard` the jump to take
+ * when a lift has earned one.
+ */
+export interface LoadStep {
+  smallest: number;
+  standard: number;
+}
+
+const LOWER_BODY = ["quads", "hamstrings", "glutes", "calves"];
+
+export const equipmentLoadStep = (
+  exercise: Exercise | undefined,
+  units: UnitSystem,
+): LoadStep => {
+  const isLower = !!exercise?.primary.some((m) => LOWER_BODY.includes(m));
+  const equipment = exercise?.equipment ?? [];
+  const has = (kind: string): boolean => equipment.includes(kind as never);
+  const imperial = units === "imperial";
+  const lb = (pounds: number): number => round(pounds * 0.45359237, 3);
+
+  // Fixed dumbbells and kettlebells come in fixed sizes; nothing finer exists.
+  if (has("dumbbell") && !has("barbell")) {
+    return imperial ? { smallest: lb(5), standard: lb(5) } : { smallest: 2, standard: 2 };
+  }
+  if (has("kettlebell") && !has("barbell") && !has("dumbbell")) {
+    return imperial ? { smallest: lb(8), standard: lb(8) } : { smallest: 4, standard: 4 };
+  }
+  if ((has("machine") || has("cable")) && !has("barbell")) {
+    return imperial ? { smallest: lb(5), standard: lb(10) } : { smallest: 2.5, standard: 5 };
+  }
+  if (has("barbell")) {
+    return imperial
+      ? { smallest: lb(5), standard: lb(isLower ? 10 : 5) }
+      : { smallest: 2.5, standard: isLower ? 5 : 2.5 };
+  }
+  // Bodyweight and bands: the step is whatever is being hung off the belt.
+  return imperial ? { smallest: lb(5), standard: lb(5) } : { smallest: 2.5, standard: 2.5 };
+};
+
+/** Round a load to something the equipment can actually be set to. */
+export const snapToEquipment = (
+  kg: number,
+  exercise: Exercise | undefined,
+  units: UnitSystem,
+): number => {
+  const { smallest } = equipmentLoadStep(exercise, units);
+  return round(Math.max(smallest, Math.round(kg / smallest) * smallest), 2);
+};
+
+/**
  * How much to add.
  *
- * Absolute jumps are right for compounds — 2.5 kg on a bench, 5 kg on a squat.
- * They are wrong for light isolation work, where the same jump can be a 15 %
- * increase, so the increment is capped at 10 % of the current load and falls
- * back to the smallest plate pair available.
+ * The standard jump, unless that would be more than a tenth of the current
+ * load — in which case take the finest step the equipment allows. On a 12 kg
+ * dumbbell that is still 2 kg, because 13 kg dumbbells do not exist.
  */
 export const progressionIncrement = (
   exercise: Exercise | undefined,
   currentLoadKg: number,
   units: UnitSystem,
 ): number => {
-  const isLower = !!exercise?.primary.some((m) =>
-    ["quads", "hamstrings", "glutes", "calves"].includes(m),
-  );
-  const smallest = units === "imperial" ? loadIncrement(units, "upper") / 2 : 1.25;
-  const base = exercise?.isCompound === false
-    ? smallest
-    : loadIncrement(units, isLower ? "lower" : "upper");
+  const { smallest, standard } = equipmentLoadStep(exercise, units);
+  if (currentLoadKg > 0 && standard > currentLoadKg * 0.1) return smallest;
+  return standard;
+};
 
-  if (currentLoadKg > 0 && base > currentLoadKg * 0.1) {
-    return round(Math.max(smallest, currentLoadKg * 0.05), 2);
-  }
-  return base;
+/** The next loadable weight up from here. */
+export const nextLoad = (
+  exercise: Exercise | undefined,
+  currentLoadKg: number,
+  units: UnitSystem,
+): number => {
+  const increment = progressionIncrement(exercise, currentLoadKg, units);
+  const snapped = snapToEquipment(currentLoadKg + increment, exercise, units);
+  // Snapping must never round back down onto the weight already being used.
+  return snapped > currentLoadKg
+    ? snapped
+    : snapToEquipment(currentLoadKg + increment * 2, exercise, units);
 };
 
 /** Sets performed at the heaviest load of a session. */
@@ -214,7 +272,7 @@ export const assessProgression = (
 
   /* ------------------------------ Ready to go up ------------------------- */
   if (cleared && effortOk) {
-    const next = snapLoad(topWeight + increment, units);
+    const next = nextLoad(exercise, topWeight, units);
     return {
       ...status,
       state: "ready",
@@ -246,7 +304,7 @@ export const assessProgression = (
     const previousShort =
       previous != null && Math.min(...topSets(previous.sets).sets.map((s) => s.reps)) < repMin;
     if (previousShort) {
-      const backoff = snapLoad(topWeight * 0.9, units);
+      const backoff = snapToEquipment(topWeight * 0.9, exercise, units);
       return {
         ...status,
         state: "deload",

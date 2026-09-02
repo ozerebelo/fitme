@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { Exercise, PersonalRecord, SetLog, UnitSystem } from "@fitme/core";
+import type {
+  Exercise,
+  PersonalRecord,
+  ProgressionState,
+  ProgressionStatus,
+  SetLog,
+  UnitSystem,
+} from "@fitme/core";
 import {
   cryptoId,
   displayWeight,
@@ -32,20 +39,24 @@ export const ExerciseCard = ({
   previous,
   record,
   units,
+  progression,
   onChange,
   onAddSet,
   onCompleteSet,
   onOpenMenu,
+  onApplyWeight,
 }: {
   exercise: Exercise;
   sets: SetLog[];
   previous: PreviousSet[];
   record: PersonalRecord | undefined;
   units: UnitSystem;
+  progression?: ProgressionStatus;
   onChange: (setId: string, patch: Partial<SetLog>) => void;
   onAddSet: (set: SetLog) => void;
   onCompleteSet: (set: SetLog) => void;
   onOpenMenu: () => void;
+  onApplyWeight: (weightKg: number) => void;
 }) => {
   const [showRpe, setShowRpe] = useState(sets.some((s) => s.rpe != null));
 
@@ -96,6 +107,21 @@ export const ExerciseCard = ({
           </button>
         </div>
       </header>
+
+      {progression && progression.state !== "new" && (
+        <ProgressionBanner
+          status={progression}
+          units={units}
+          alreadyAtSuggestion={
+            progression.suggestedWeightKg != null &&
+            sets.length > 0 &&
+            sets.every((s) => Math.abs(s.weightKg - progression.suggestedWeightKg!) < 0.01)
+          }
+          onApply={() =>
+            progression.suggestedWeightKg != null && onApplyWeight(progression.suggestedWeightKg)
+          }
+        />
+      )}
 
       <div className="px-3 py-2">
         <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-faint">
@@ -214,6 +240,82 @@ export const ExerciseCard = ({
         </button>
       </div>
     </section>
+  );
+};
+
+const STATE_STYLE: Record<
+  Exclude<ProgressionState, "new">,
+  { border: string; text: string; label: string }
+> = {
+  ready: { border: "border-brand/40 bg-brand/10", text: "text-brand", label: "Ready" },
+  building: { border: "border-border bg-surface-2", text: "text-muted", label: "Building" },
+  stalled: { border: "border-warn/40 bg-warn/10", text: "text-warn", label: "Stalled" },
+  deload: { border: "border-warn/40 bg-warn/10", text: "text-warn", label: "Back off" },
+};
+
+/**
+ * The progressive-overload prompt.
+ *
+ * It sits directly above the set rows because that is where the decision is
+ * made — between racking the previous set and loading the bar. Working out
+ * "did I clear the range last time?" from a history screen is exactly the
+ * friction that leaves people at the same weight for months.
+ */
+const ProgressionBanner = ({
+  status,
+  units,
+  alreadyAtSuggestion,
+  onApply,
+}: {
+  status: ProgressionStatus;
+  units: UnitSystem;
+  alreadyAtSuggestion: boolean;
+  onApply: () => void;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const style = STATE_STYLE[status.state as Exclude<ProgressionState, "new">];
+  const suggestion = status.suggestedWeightKg;
+  const showApply = suggestion != null && !alreadyAtSuggestion;
+
+  return (
+    <div className={clsx("mx-3 mt-3 rounded-xl border p-3", style.border)}>
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="min-w-0 flex-1 text-left"
+        >
+          <span className={clsx("block text-sm font-semibold", style.text)}>
+            {status.headline}
+          </span>
+          <span className="mt-0.5 block text-xs text-faint">
+            {status.lastSets.length > 0
+              ? `Last: ${displayWeight(status.lastSets[0]!.weightKg, units)} ${unitLabel(units)} × ${status.lastSets.map((s) => s.reps).join(", ")}`
+              : "No previous sets"}
+            {" · target "}
+            {status.range[0]}–{status.range[1]}
+            {expanded ? "" : " · why?"}
+          </span>
+        </button>
+
+        {showApply && (
+          <button
+            type="button"
+            onClick={onApply}
+            className="tabular shrink-0 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-black"
+          >
+            Use {displayWeight(suggestion, units)}
+          </button>
+        )}
+      </div>
+
+      {expanded && (
+        <p className="mt-2 border-t border-border/60 pt-2 text-xs leading-relaxed text-muted">
+          {status.detail}
+        </p>
+      )}
+    </div>
   );
 };
 

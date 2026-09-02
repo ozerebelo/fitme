@@ -77,8 +77,26 @@ describe("exercise matching", () => {
     expect(matcher.match("Incline Bench Press (Barbell)")?.id).toBe("incline-bench-barbell");
   });
 
+  it("handles the qualifiers real exports are full of", () => {
+    // Names taken from an actual four-year Strong export.
+    expect(matcher.match("Triceps Pushdown (Cable - Straight Bar)")?.id).toBe("triceps-pushdown");
+    expect(matcher.match("Reverse Fly (Machine)")?.id).toBe("rear-delt-fly");
+    expect(matcher.match("Seated Row (Machine)")?.id).toBe("seated-cable-row");
+    expect(matcher.match("Bent Over One Arm Row (Dumbbell)")?.id).toBe("dumbbell-row");
+    expect(matcher.match("Running (Treadmill)")?.id).toBe("running");
+  });
+
+  it("maps a variation onto its base lift rather than inventing a duplicate", () => {
+    // A spider curl is a cable curl; giving it its own entry would split the
+    // history and hide the progression.
+    expect(matcher.match("Spider Curl (Cable)")?.id).toBe("cable-curl");
+    // A bare "Chest Fly" should land on a fly, not on nothing.
+    expect(matcher.match("Chest Fly")?.primary).toContain("chest");
+  });
+
   it("returns null for something genuinely unknown", () => {
-    expect(matcher.match("Zercher Anderson Squat off Pins")).toBeNull();
+    expect(matcher.match("Jefferson Curl")).toBeNull();
+    expect(matcher.match("Turkish Get Up")).toBeNull();
   });
 });
 
@@ -169,13 +187,13 @@ describe("Strong import", () => {
   it("keeps unknown exercises rather than dropping the history", () => {
     const csv = [
       HEADER,
-      row("2024-05-01 18:00:00", "Arms", "Spider Curl (Cable)", "1", "20", "12"),
+      row("2024-05-01 18:00:00", "Arms", "Jefferson Curl", "1", "20", "12"),
     ].join("\n");
     const result = importStrongCsv(csv);
     expect(result.unmatched).toHaveLength(1);
-    expect(result.unmatched[0]!.sourceName).toBe("Spider Curl (Cable)");
+    expect(result.unmatched[0]!.sourceName).toBe("Jefferson Curl");
     expect(result.newExercises[0]!.primary).toContain("biceps");
-    expect(result.sessions[0]!.sets[0]!.sourceExerciseName).toBe("Spider Curl (Cable)");
+    expect(result.sessions[0]!.sets[0]!.sourceExerciseName).toBe("Jefferson Curl");
     expect(result.warnings.length).toBeGreaterThan(0);
   });
 

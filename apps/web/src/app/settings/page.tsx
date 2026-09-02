@@ -13,6 +13,7 @@ import { ACTIVITY_LABELS, RATE_BOUNDS, generateProgram } from "@fitme/core";
 import { useApp } from "@/lib/state";
 import { RequireProfile } from "@/components/Guard";
 import { MemoryPanel } from "@/components/settings/MemoryPanel";
+import { RepRangeSettings } from "@/components/settings/RepRangeSettings";
 import { StrongImport } from "@/components/settings/StrongImport";
 import {
   Button,
@@ -291,6 +292,9 @@ function Settings() {
             </Button>
           </div>
         </Card>
+
+        {/* ---------------------------- Rep ranges --------------------------- */}
+        <RepRangeSettings />
 
         {/* ---------------------------- In the gym --------------------------- */}
         <Card>

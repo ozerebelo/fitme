@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_REP_RANGE_POLICY,
   EXERCISE_BY_ID,
   chooseSplit,
+  deriveRoutinesFromHistory,
   generateProgram,
   nextProgramDay,
+  programFromRoutines,
   sessionMinutes,
 } from "../src/index";
-import { makeProfile } from "./helpers";
+import { daysEnding, makeProfile, makeSession, makeSet } from "./helpers";
 
 describe("split selection", () => {
   it("scales the split with training frequency", () => {
@@ -109,5 +112,113 @@ describe("program generation", () => {
     expect(nextProgramDay(program, [])!.id).toBe(program.days[0]!.id);
     expect(nextProgramDay(program, [program.days[0]!.id])!.id).toBe(program.days[1]!.id);
     expect(nextProgramDay(program, [program.days[2]!.id])!.id).toBe(program.days[0]!.id);
+  });
+});
+
+
+describe("routines derived from history", () => {
+  const days = daysEnding(30);
+  const today = days[days.length - 1]!;
+  const at = (n: number): string => days[days.length - n]!;
+
+  const push = (date: string) =>
+    makeSession(date, [
+      makeSet("bench-press-barbell", 80, 8),
+      makeSet("bench-press-barbell", 80, 8),
+      makeSet("bench-press-barbell", 80, 7),
+      makeSet("overhead-press-dumbbell", 22, 10),
+      makeSet("overhead-press-dumbbell", 22, 10),
+      makeSet("lateral-raise-dumbbell", 10, 15),
+    ], { name: "PUSH" });
+
+  const pull = (date: string) =>
+    makeSession(date, [
+      makeSet("lat-pulldown", 65, 10),
+      makeSet("lat-pulldown", 65, 10),
+      makeSet("barbell-row", 70, 8),
+      makeSet("bicep-curl-dumbbell", 14, 12),
+    ], { name: "PULL" });
+
+  const legs = (date: string) =>
+    makeSession(date, [makeSet("back-squat", 100, 8), makeSet("back-squat", 100, 8)], {
+      name: "Legs",
+    });
+
+  const history = [push(at(9)), pull(at(8)), legs(at(7)), push(at(4)), pull(at(3)), legs(at(2))];
+
+  it("rebuilds each routine from its most recent session", () => {
+    const routines = deriveRoutinesFromHistory(history, { asOf: today });
+    expect(routines.map((r) => r.name)).toEqual(["Legs", "PULL", "PUSH"]);
+
+    const pushRoutine = routines.find((r) => r.name === "PUSH")!;
+    expect(pushRoutine.exerciseNames).toEqual([
+      "Barbell Bench Press",
+      "Dumbbell Shoulder Press",
+      "Dumbbell Lateral Raise",
+    ]);
+    // Set counts come from what was actually performed.
+    expect(pushRoutine.day.blocks.map((b) => b.sets)).toEqual([3, 2, 1]);
+  });
+
+  it("applies the user's rep ranges rather than the logged reps", () => {
+    const routines = deriveRoutinesFromHistory(history, { asOf: today });
+    const pushRoutine = routines.find((r) => r.name === "PUSH")!;
+    expect(pushRoutine.day.blocks[0]!.repMin).toBe(6);
+    expect(pushRoutine.day.blocks[0]!.repMax).toBe(10);
+    // Isolation gets its own range.
+    expect(pushRoutine.day.blocks[2]!.repMax).toBe(15);
+  });
+
+  it("treats differently-cased names as one routine", () => {
+    const mixed = [...history, makeSession(at(1), [makeSet("back-squat", 100, 8)], { name: "LEGS" })];
+    const routines = deriveRoutinesFromHistory(mixed, { asOf: today });
+    expect(routines.filter((r) => r.name.toLowerCase() === "legs")).toHaveLength(1);
+  });
+
+  it("ignores one-off sessions", () => {
+    const withOneOff = [
+      ...history,
+      makeSession(at(1), [makeSet("back-squat", 60, 10)], { name: "Holiday session" }),
+    ];
+    const routines = deriveRoutinesFromHistory(withOneOff, { asOf: today });
+    expect(routines.map((r) => r.name)).not.toContain("Holiday session");
+  });
+
+  it("keeps only the most recent routines, up to the limit", () => {
+    const routines = deriveRoutinesFromHistory(history, { asOf: today, limit: 2 });
+    expect(routines).toHaveLength(2);
+    expect(routines.map((r) => r.name)).toEqual(["Legs", "PULL"]);
+  });
+
+  it("ignores history outside the window", () => {
+    expect(deriveRoutinesFromHistory(history, { asOf: today, windowDays: 3 })).toHaveLength(0);
+  });
+
+  it("derives the focus muscles from the exercises actually in the day", () => {
+    const routines = deriveRoutinesFromHistory(history, { asOf: today });
+    expect(routines.find((r) => r.name === "PULL")!.day.focus).toContain("lats");
+  });
+
+  it("assembles them into a usable programme", () => {
+    const routines = deriveRoutinesFromHistory(history, { asOf: today });
+    const program = programFromRoutines(routines, makeProfile());
+    expect(program.days).toHaveLength(3);
+    expect(program.daysPerWeek).toBe(3);
+    expect(program.days.map((d) => d.dayIndex)).toEqual([0, 1, 2]);
+    expect(program.rationale.join(" ")).toMatch(/actually been running/);
+    // The programme must survive the day-cycling the rest of the app does.
+    expect(nextProgramDay(program, [])!.name).toBe(routines[0]!.name);
+  });
+
+  it("says nothing when there is no history", () => {
+    expect(deriveRoutinesFromHistory([], { asOf: today })).toEqual([]);
+  });
+
+  it("honours a custom range policy", () => {
+    const routines = deriveRoutinesFromHistory(history, {
+      asOf: today,
+      policy: { ...DEFAULT_REP_RANGE_POLICY, compound: [3, 5] },
+    });
+    expect(routines.find((r) => r.name === "PUSH")!.day.blocks[0]!.repMax).toBe(5);
   });
 });

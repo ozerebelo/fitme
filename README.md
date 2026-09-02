@@ -26,10 +26,14 @@ signal.
 **Training**
 - In-gym set logger: previous session's numbers inline on every row, big tap
   targets, auto rest timer, plate calculator, RPE, PR detection
+- **Progressive overload tracking** — set your rep range (6–10 by default for
+  main lifts) and the app tells you, per lift, when you have earned the next
+  jump, prefills it, and shows the working
 - Programme generator: picks a split from your training frequency, fills it from
   the equipment you actually have, and fits it to your session length
-- Progression engine that tells you what weight to use next and why
-- One-time import of your history from the Strong app
+- **Routines rebuilt from your history** — import from Strong and the app hands
+  back the routines you were already running, same exercises and set counts
+- Bodyweight log with a trend line, editable entry by entry
 
 **The coach**
 - **Adaptive TDEE** — back-calculates your real maintenance calories from what
@@ -129,6 +133,19 @@ That grounding runs on the device, not in the API route — your custom foods an
 your memory never leave it, so the client is the only place where all four tiers
 actually exist.
 
+**Progressive overload, made explicit.** Double progression — climb the rep
+range at a fixed load, then add weight and reset — is the model that keeps
+working after linear progression stops. The hard part is not the rule, it is
+noticing you satisfied it: clearing 3×10 and then loading the same 80 kg next
+week is how a good programme quietly becomes maintenance. So the app answers
+that question for every lift, from the history alone, and puts the answer where
+the decision is made — above the set rows, with the weight already filled in.
+
+Two details do most of the work. The effort ceiling means hitting the reps at
+RPE 9.5 does *not* earn a jump, because adding load on top of a grinder is how
+stalls start. And load steps come from the equipment: a 12 kg dumbbell goes to
+14, not to 13.75, because 13.75 kg dumbbells do not exist.
+
 **Memory is inspectable.** A memory you cannot audit is a liability: one wrong
 fact silently distorts every future entry with no way to find out why. So
 everything the app has learned is listed in Settings in plain language, editable
@@ -207,6 +224,17 @@ inferred, so no history is lost).
 
 Each workout is keyed by its source timestamp, so **running the import twice is a
 no-op** — re-importing a full export only adds what is genuinely new.
+
+Name matching is containment-based rather than exact, which is what real exports
+need: `Triceps Pushdown (Cable - Straight Bar)` resolves to the catalog's triceps
+pushdown, while `Incline Bench Press (Barbell)` still resolves to the incline
+entry rather than collapsing into flat bench, because it covers more of the
+query. Verified against a four-year export of ~3,200 rows: 96 sessions, 1,906
+sets, zero unmatched exercises.
+
+Afterwards the app offers to rebuild the routines you have been running, taken
+from the most recent session under each workout name — same exercises, same
+order, same set counts, with rep targets from your own range settings.
 
 ---
 

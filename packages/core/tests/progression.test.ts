@@ -4,6 +4,8 @@ import {
   EXERCISE_BY_ID,
   assessProgression,
   progressionBoard,
+  equipmentLoadStep,
+  nextLoad,
   progressionIncrement,
   readyToProgress,
   resolveRepRange,
@@ -41,20 +43,43 @@ describe("rep ranges", () => {
   });
 });
 
-describe("increments", () => {
-  it("uses bigger jumps for lower-body compounds", () => {
+describe("load steps", () => {
+  it("takes bigger jumps on lower-body barbell work", () => {
     expect(progressionIncrement(EXERCISE_BY_ID.get("back-squat"), 100, "metric")).toBe(5);
     expect(progressionIncrement(EXERCISE_BY_ID.get("bench-press-barbell"), 80, "metric")).toBe(2.5);
   });
 
-  it("uses the smallest jump for isolation work", () => {
-    expect(progressionIncrement(EXERCISE_BY_ID.get("lateral-raise-dumbbell"), 12, "metric")).toBe(1.25);
+  it("only ever suggests dumbbells that exist", () => {
+    // Dumbbells run 12, 14, 16 — never 13.75.
+    expect(equipmentLoadStep(EXERCISE_BY_ID.get("lateral-raise-dumbbell"), "metric").smallest).toBe(2);
+    expect(nextLoad(EXERCISE_BY_ID.get("lateral-raise-dumbbell"), 12, "metric")).toBe(14);
   });
 
-  it("never adds more than about a tenth of a light load", () => {
-    // 5 kg onto a 20 kg lift would be a 25 % jump.
-    const inc = progressionIncrement(EXERCISE_BY_ID.get("back-squat"), 20, "metric");
-    expect(inc).toBeLessThanOrEqual(2);
+  it("steps kettlebells in the sizes they are cast in", () => {
+    expect(nextLoad(EXERCISE_BY_ID.get("kettlebell-swing"), 24, "metric")).toBe(28);
+  });
+
+  it("uses stack-sized jumps on machines", () => {
+    expect(nextLoad(EXERCISE_BY_ID.get("leg-press"), 180, "metric")).toBe(185);
+  });
+
+  it("falls back to the finest real step on a light load", () => {
+    // 5 kg onto a 20 kg squat would be a 25 % jump; 2.5 is the smallest plate pair.
+    expect(nextLoad(EXERCISE_BY_ID.get("back-squat"), 20, "metric")).toBe(22.5);
+  });
+
+  it("never suggests the weight already on the bar", () => {
+    for (const load of [5, 12, 20, 47.5, 100]) {
+      const next = nextLoad(EXERCISE_BY_ID.get("bench-press-barbell"), load, "metric");
+      expect(next).toBeGreaterThan(load);
+    }
+  });
+
+  it("works in pounds", () => {
+    const next = nextLoad(EXERCISE_BY_ID.get("bench-press-barbell"), 60, "imperial");
+    // 60 kg ≈ 132 lb; the next step is +5 lb, snapped to a 5 lb multiple.
+    expect(next).toBeGreaterThan(60);
+    expect(next).toBeLessThan(63);
   });
 });
 
@@ -174,7 +199,7 @@ describe("the board", () => {
     const raise = board.find((s) => s.exerciseId === "lateral-raise-dumbbell")!;
     expect(raise.range).toEqual([10, 15]);
     expect(raise.state).toBe("ready");
-    expect(raise.suggestedWeightKg).toBe(13.75); // +1.25 on an isolation lift
+    expect(raise.suggestedWeightKg).toBe(14); // the next dumbbell that exists
   });
 
   it("ignores lifts outside the window", () => {

@@ -10,9 +10,17 @@ import type {
   ProgramDay,
   ProgramExercise,
   SplitKind,
+  WorkoutSession,
 } from "./types";
-import { EXERCISES } from "./data/exercises";
+import { EXERCISES, EXERCISE_BY_ID } from "./data/exercises";
 import { cryptoId } from "./nutrition";
+import {
+  DEFAULT_REP_RANGE_POLICY,
+  type RepRangePolicy,
+  resolveRepRange,
+} from "./progression";
+import { isWorkingSet } from "./strength";
+import { type DateKey, daysBetween, toDateKey } from "./date";
 
 /* -------------------------------------------------------------------------- */
 /*                              Split selection                               */
@@ -505,3 +513,151 @@ export const nextProgramDay = (
   const lastIndex = program.days.findIndex((d) => d.id === lastCompleted);
   return program.days[(lastIndex + 1) % program.days.length]!;
 };
+
+
+/* -------------------------------------------------------------------------- */
+/*                        Routines derived from history                       */
+/* -------------------------------------------------------------------------- */
+
+export interface DerivedRoutine {
+  /** The workout name as it was logged, e.g. "PUSH". */
+  name: string;
+  lastPerformed: DateKey;
+  /** How many times this routine appears in the history considered. */
+  timesPerformed: number;
+  day: ProgramDay;
+  /** Exercise names in order, for a preview before committing. */
+  exerciseNames: string[];
+}
+
+export interface DeriveRoutinesOptions {
+  policy?: RepRangePolicy;
+  catalog?: Map<string, Exercise>;
+  /** How many distinct routines to return, most recently used first. */
+  limit?: number;
+  /** Ignore anything older than this. */
+  windowDays?: number;
+  asOf?: DateKey;
+  /** Drop routines performed fewer than this many times — one-offs are noise. */
+  minSessions?: number;
+}
+
+/**
+ * Rebuild the routines someone is actually running, from what they logged.
+ *
+ * Anyone arriving with training history already has a programme; asking them to
+ * retype it is both tedious and lossy. Their most recent session under each
+ * workout name *is* the routine — exercise selection, order and set counts
+ * included — so it is taken as the source of truth, with only the rep
+ * prescription replaced by the user's own range policy.
+ */
+export const deriveRoutinesFromHistory = (
+  sessions: WorkoutSession[],
+  opts: DeriveRoutinesOptions = {},
+): DerivedRoutine[] => {
+  const policy = opts.policy ?? DEFAULT_REP_RANGE_POLICY;
+  const catalog = opts.catalog ?? EXERCISE_BY_ID;
+  const asOf = opts.asOf ?? toDateKey();
+  const windowDays = opts.windowDays ?? 120;
+  const limit = opts.limit ?? 3;
+  const minSessions = opts.minSessions ?? 2;
+
+  const inWindow = sessions
+    .filter((s) => s.sets.some(isWorkingSet))
+    .filter((s) => daysBetween(s.date, asOf) <= windowDays)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  // Group by name, case-insensitively — "Push" and "PUSH" are one routine.
+  const groups = new Map<string, { label: string; sessions: WorkoutSession[] }>();
+  for (const session of inWindow) {
+    const key = session.name.trim().toLowerCase();
+    const group = groups.get(key);
+    if (group) group.sessions.push(session);
+    else groups.set(key, { label: session.name.trim(), sessions: [session] });
+  }
+
+  const candidates = [...groups.values()]
+    .filter((g) => g.sessions.length >= minSessions)
+    .sort((a, b) => b.sessions[0]!.date.localeCompare(a.sessions[0]!.date))
+    .slice(0, limit);
+
+  return candidates.map((group, dayIndex) => {
+    const latest = group.sessions[0]!;
+
+    // Working sets grouped by exercise, in the order they were performed.
+    const order: string[] = [];
+    const setsByExercise = new Map<string, SetLogLike[]>();
+    for (const set of latest.sets) {
+      if (!isWorkingSet(set)) continue;
+      const existing = setsByExercise.get(set.exerciseId);
+      if (existing) existing.push(set);
+      else {
+        setsByExercise.set(set.exerciseId, [set]);
+        order.push(set.exerciseId);
+      }
+    }
+
+    const blocks: ProgramExercise[] = order.map((exerciseId) => {
+      const exercise = catalog.get(exerciseId);
+      const [repMin, repMax] = resolveRepRange(exercise, policy);
+      const compound = exercise?.isCompound ?? true;
+      return {
+        exerciseId,
+        sets: setsByExercise.get(exerciseId)!.length,
+        repMin,
+        repMax,
+        rpe: policy.targetRpe,
+        restSeconds: compound ? 180 : 90,
+      };
+    });
+
+    // Focus: the muscles this day actually trains most.
+    const muscleCounts = new Map<MuscleGroup, number>();
+    for (const block of blocks) {
+      for (const muscle of catalog.get(block.exerciseId)?.primary ?? []) {
+        muscleCounts.set(muscle, (muscleCounts.get(muscle) ?? 0) + block.sets);
+      }
+    }
+    const focus = [...muscleCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([muscle]) => muscle);
+
+    return {
+      name: group.label,
+      lastPerformed: latest.date,
+      timesPerformed: group.sessions.length,
+      exerciseNames: order.map((id) => catalog.get(id)?.name ?? id),
+      day: {
+        id: cryptoId(),
+        dayIndex,
+        name: group.label,
+        focus,
+        blocks,
+      },
+    };
+  });
+};
+
+type SetLogLike = { exerciseId: string };
+
+/** Assemble derived routines into a programme the rest of the app understands. */
+export const programFromRoutines = (
+  routines: DerivedRoutine[],
+  profile: Profile,
+  name = "My routines",
+): Program => ({
+  id: cryptoId(),
+  name,
+  split: routines.length >= 3 ? "push_pull_legs" : "full_body",
+  daysPerWeek: routines.length,
+  goal: profile.goal,
+  experience: profile.experience,
+  days: routines.map((routine, dayIndex) => ({ ...routine.day, dayIndex })),
+  rationale: [
+    `Built from the ${routines.length} ${routines.length === 1 ? "routine" : "routines"} you have actually been running — same exercises, same order, same set counts as your most recent ${routines.map((r) => r.name).join(", ")}.`,
+    "Rep targets come from your own range settings rather than from the logged reps, so the progression prompts have something consistent to work against.",
+    "Change anything you like; it is a starting point taken from your history, not a prescription.",
+  ],
+  createdAt: new Date().toISOString(),
+});

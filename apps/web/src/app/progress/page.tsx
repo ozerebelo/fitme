@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { MuscleGroup } from "@fitme/core";
+import type { BodyMetric, MuscleGroup } from "@fitme/core";
 import {
   VOLUME_LANDMARKS,
   adherence,
@@ -11,6 +11,7 @@ import {
   cryptoId,
   dailyNutrition,
   estimateAdaptiveTdee,
+  formatDayLabel,
   fromDateKey,
   isWorkingSet,
   lastNDays,
@@ -33,8 +34,9 @@ import {
   Segmented,
   Sheet,
   Spinner,
+  TextInput,
 } from "@/components/ui";
-import { ScaleIcon } from "@/components/icons";
+import { ScaleIcon, TrashIcon } from "@/components/icons";
 import { rate, weight as formatWeight, weightValue } from "@/lib/format";
 import { parseWeight } from "@fitme/core";
 
@@ -42,12 +44,14 @@ type Range = "30" | "90" | "365";
 
 function Progress() {
   const params = useSearchParams();
-  const { data, targets, exerciseMap, logWeight, currentWeightKg } = useApp();
+  const { data, targets, exerciseMap, logWeight, removeMetric, currentWeightKg } = useApp();
   const profile = data.profile!;
   const asOf = toDateKey();
 
   const [range, setRange] = useState<Range>("90");
   const [weighOpen, setWeighOpen] = useState(params.get("weigh") === "1");
+  const [editingMetric, setEditingMetric] = useState<BodyMetric | null>(null);
+  const [showAllWeights, setShowAllWeights] = useState(false);
 
   const windowDays = Number(range);
   const trend = useMemo(
@@ -117,6 +121,17 @@ function Progress() {
       .filter((row) => row.value > 0 || row.label !== "forearms")
       .sort((a, b) => b.value - a.value);
   }, [data.sessions, exerciseMap, asOf]);
+
+  /** Newest first, each with its change from the previous weigh-in. */
+  const weightLog = useMemo(() => {
+    const sorted = [...data.metrics].sort((a, b) => a.date.localeCompare(b.date));
+    return sorted
+      .map((metric, i) => ({
+        metric,
+        delta: i > 0 ? metric.weightKg - sorted[i - 1]!.weightKg : null,
+      }))
+      .reverse();
+  }, [data.metrics]);
 
   const records = useMemo(
     () => personalRecords(data.sessions.filter((s) => s.endedAt)),
@@ -219,6 +234,69 @@ function Progress() {
                 </Button>
               }
             />
+          )}
+        </Card>
+
+        <Card>
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="font-semibold">Weight log</h2>
+            <span className="text-xs text-faint">
+              {data.metrics.length} {data.metrics.length === 1 ? "entry" : "entries"}
+            </span>
+          </div>
+
+          {data.metrics.length === 0 ? (
+            <p className="mt-3 rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted">
+              No weigh-ins recorded yet.
+            </p>
+          ) : (
+            <>
+              <ul className="mt-2 divide-y divide-border">
+                {weightLog.slice(0, showAllWeights ? undefined : 8).map((row) => (
+                  <li key={row.metric.id}>
+                    <button
+                      type="button"
+                      onClick={() => setEditingMetric(row.metric)}
+                      className="flex w-full items-center justify-between gap-3 py-2.5 text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm">{formatDayLabel(row.metric.date)}</span>
+                        {(row.metric.bodyFatPct != null || row.metric.waistCm != null) && (
+                          <span className="tabular mt-0.5 block text-xs text-faint">
+                            {row.metric.bodyFatPct != null && `${row.metric.bodyFatPct}% body fat`}
+                            {row.metric.bodyFatPct != null && row.metric.waistCm != null && " · "}
+                            {row.metric.waistCm != null && `waist ${row.metric.waistCm} cm`}
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex shrink-0 items-baseline gap-3">
+                        {row.delta != null && Math.abs(row.delta) >= 0.05 && (
+                          <span
+                            className={`tabular text-xs ${row.delta < 0 ? "text-brand" : "text-muted"}`}
+                          >
+                            {row.delta > 0 ? "+" : ""}
+                            {formatWeight(row.delta, profile.units).replace(/^-/, "−")}
+                          </span>
+                        )}
+                        <span className="tabular text-sm font-medium">
+                          {formatWeight(row.metric.weightKg, profile.units)}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              {data.metrics.length > 8 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllWeights((v) => !v)}
+                  className="mt-2 w-full text-center text-xs font-medium text-muted hover:text-text"
+                >
+                  {showAllWeights ? "Show recent only" : `Show all ${data.metrics.length}`}
+                </button>
+              )}
+            </>
           )}
         </Card>
 
@@ -352,60 +430,101 @@ function Progress() {
           setWeighOpen(false);
         }}
       />
+
+      <WeighInSheet
+        open={!!editingMetric}
+        existing={editingMetric}
+        onClose={() => setEditingMetric(null)}
+        units={profile.units}
+        lastWeightKg={editingMetric?.weightKg ?? currentWeightKg}
+        onSave={(metric) => {
+          logWeight(metric);
+          setEditingMetric(null);
+        }}
+        onDelete={(id) => {
+          removeMetric(id);
+          setEditingMetric(null);
+        }}
+      />
     </div>
   );
 }
 
 const WeighInSheet = ({
   open,
+  existing,
   onClose,
   units,
   lastWeightKg,
   onSave,
+  onDelete,
 }: {
   open: boolean;
+  existing?: BodyMetric | null;
   onClose: () => void;
   units: "metric" | "imperial";
   lastWeightKg: number | null;
-  onSave: (metric: {
-    id: string;
-    date: string;
-    weightKg: number;
-    bodyFatPct?: number;
-    waistCm?: number;
-  }) => void;
+  onSave: (metric: BodyMetric) => void;
+  onDelete?: (id: string) => void;
 }) => {
   const [value, setValue] = useState(
     lastWeightKg != null ? weightValue(lastWeightKg, units) : 75,
   );
   const [bodyFat, setBodyFat] = useState("");
   const [waist, setWaist] = useState("");
+  const [date, setDate] = useState(toDateKey());
+  const [trackedId, setTrackedId] = useState<string | undefined>(existing?.id);
+
+  // Load the entry being edited into the draft.
+  if (open && existing && existing.id !== trackedId) {
+    setTrackedId(existing.id);
+    setValue(weightValue(existing.weightKg, units));
+    setBodyFat(existing.bodyFatPct != null ? String(existing.bodyFatPct) : "");
+    setWaist(existing.waistCm != null ? String(existing.waistCm) : "");
+    setDate(existing.date);
+  }
 
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title="Weigh in"
+      title={existing ? "Edit weigh-in" : "Weigh in"}
       footer={
-        <Button
-          variant="primary"
-          size="lg"
-          full
-          onClick={() =>
-            onSave({
-              id: cryptoId(),
-              date: toDateKey(),
-              weightKg: parseWeight(value, units),
-              bodyFatPct: bodyFat ? Number(bodyFat) : undefined,
-              waistCm: waist ? Number(waist) : undefined,
-            })
-          }
-        >
-          Save
-        </Button>
+        <div className={existing && onDelete ? "grid grid-cols-[auto_1fr] gap-2" : ""}>
+          {existing && onDelete && (
+            <Button
+              variant="danger"
+              onClick={() => onDelete(existing.id)}
+              aria-label="Delete this weigh-in"
+            >
+              <TrashIcon className="h-5 w-5" />
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            size="lg"
+            full={!existing}
+            onClick={() =>
+              onSave({
+                id: existing?.id ?? cryptoId(),
+                date,
+                weightKg: parseWeight(value, units),
+                bodyFatPct: bodyFat ? Number(bodyFat) : undefined,
+                waistCm: waist ? Number(waist) : undefined,
+              })
+            }
+          >
+            Save
+          </Button>
+        </div>
       }
     >
       <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-muted">Date</span>
+          <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-muted">
             Weight ({units === "imperial" ? "lb" : "kg"})
