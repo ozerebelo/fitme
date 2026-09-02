@@ -196,6 +196,45 @@ describe("teaching the app in Portuguese", () => {
   });
 });
 
+describe("brackets and asides", () => {
+  const real =
+    "fatia de pão de trigo com manteiga (quando disser manteiga é creme vegetal com sabor a manteiga) e uma chavena de café com leite (leite magro sem lactose)";
+
+  it("does not let a teaching phrase run past its bracket", () => {
+    const { facts } = scanFacts(real);
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({
+      kind: "alias",
+      trigger: "manteiga",
+      foodName: "creme vegetal com sabor a manteiga",
+    });
+  });
+
+  it("logs the whole meal around the aside", () => {
+    const result = parseMeal(real, ctx);
+    expect(result.items.map((i) => i.name)).toEqual([
+      "White bread",
+      "Butter",
+      "Coffee, black",
+      "Milk, skimmed",
+    ]);
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it("does not split inside a bracket", () => {
+    // "com" separates a list, except when it is inside an aside.
+    expect(names("leite (leite magro sem lactose)")).toEqual(["Milk, skimmed"]);
+  });
+
+  it("takes the bracket as the more specific reading", () => {
+    expect(names("pão (pão integral)")).toEqual(["Wholemeal bread"]);
+  });
+
+  it("keeps the plainer word when the bracket adds nothing", () => {
+    expect(names("banana (madura)")).toEqual(["Banana"]);
+  });
+});
+
 describe("looksPortuguese", () => {
   it("recognises Portuguese", () => {
     expect(looksPortuguese("dois ovos com pão")).toBe(true);

@@ -182,32 +182,32 @@ const FACT_RULES: readonly FactRule[] = [
   {
     kind: "alias",
     pattern:
-      /\bwhen(?:ever)?\s+i\s+(?:say|log|write|mention)\s+(.+?)\s*,?\s+(?:it'?s|it is|that'?s|that is|i mean|means)\s+(.+)/i,
+      /\bwhen(?:ever)?\s+i\s+(?:say|log|write|mention)\s+(.+?)\s*,?\s+(?:it'?s|it is|that'?s|that is|i mean|means)\s+([^);.]+)/i,
     build: (m, pt) => aliasFact(m[1]!, m[2]!, pt),
   },
   // "Milk means Oatly Barista"
   {
     kind: "alias",
-    pattern: /^(.{2,40}?)\s+(?:always\s+)?means\s+(.+)/i,
+    pattern: /^(.{2,40}?)\s+(?:always\s+)?means\s+([^);.]+)/i,
     build: (m, pt) => aliasFact(m[1]!, m[2]!, pt),
   },
   // "Sempre que eu disser leite é o Mimosa magro"
   {
     kind: "alias",
     pattern:
-      /\b(?:sempre\s+que|quando|de\s+cada\s+vez\s+que)\s+(?:eu\s+)?(?:disser|digo|dizer|escrever|escrevo|falar|falo|mencionar|menciono|pedir|pe[çc]o)\s+(.+?)\s*,?\s+(?:[ée]\s+sempre|[ée]|significa|quer\s+dizer|refiro-?me\s+a|estou\s+a\s+falar\s+d[eo]|trata-se\s+d[eo])\s+(.+)/i,
+      /\b(?:sempre\s+que|quando|de\s+cada\s+vez\s+que)\s+(?:eu\s+)?(?:disser|digo|dizer|escrever|escrevo|falar|falo|mencionar|menciono|pedir|pe[çc]o)\s+(.+?)\s*,?\s+(?:[ée]\s+sempre|[ée]|significa|quer\s+dizer|refiro-?me\s+a|estou\s+a\s+falar\s+d[eo]|trata-se\s+d[eo])\s+([^);.]+)/i,
     build: (m, _pt) => aliasFact(m[1]!, m[2]!, true),
   },
   // "Leite significa Mimosa magro"
   {
     kind: "alias",
-    pattern: /^(.{2,40}?)\s+(?:significa|quer\s+dizer|[ée]\s+sempre)\s+(.+)/i,
+    pattern: /^(.{2,40}?)\s+(?:significa|quer\s+dizer|[ée]\s+sempre)\s+([^);.]+)/i,
     build: (m, _pt) => aliasFact(m[1]!, m[2]!, true),
   },
   // "My usual breakfast is porridge"
   {
     kind: "routine",
-    pattern: /\bmy\s+(?:usual|regular|standard|go[- ]to)\s+(.{2,30}?)\s+is\s+(.+)/i,
+    pattern: /\bmy\s+(?:usual|regular|standard|go[- ]to)\s+(.{2,30}?)\s+is\s+([^);.]+)/i,
     build: (m, _pt) => ({
       kind: "routine",
       statement: `Usual ${cleanPhrase(m[1]!)} is ${tail(m[2]!)}`,
@@ -217,7 +217,7 @@ const FACT_RULES: readonly FactRule[] = [
   {
     kind: "routine",
     pattern:
-      /\b(?:o|a)?\s*(?:meu|minha)\s+(.{2,30}?)\s+(?:habitual|do\s+costume|normal|de\s+sempre|t[íi]pico|t[íi]pica)\s+[ée]\s+(.+)/i,
+      /\b(?:o|a)?\s*(?:meu|minha)\s+(.{2,30}?)\s+(?:habitual|do\s+costume|normal|de\s+sempre|t[íi]pico|t[íi]pica)\s+[ée]\s+([^);.]+)/i,
     build: (m, _pt) => ({
       kind: "routine",
       statement: `${capitalise(cleanPhrase(m[1]!))} habitual: ${tail(m[2]!)}`,
@@ -226,14 +226,14 @@ const FACT_RULES: readonly FactRule[] = [
   // "I don't eat pork"
   {
     kind: "preference",
-    pattern: /\bi\s+(?:don'?t|do not|can'?t|cannot|never)\s+(?:eat|drink|have)\s+(.+)/i,
+    pattern: /\bi\s+(?:don'?t|do not|can'?t|cannot|never)\s+(?:eat|drink|have)\s+([^);.]+)/i,
     build: (m, _pt) => ({ kind: "preference", statement: `Does not eat ${tail(m[1]!)}` }),
   },
   // "Não como porco" / "Nunca bebo álcool"
   {
     kind: "preference",
     pattern:
-      /\b(?:eu\s+)?(?:n[ãa]o|nunca)\s+(?:como|bebo|consumo|posso\s+comer|posso\s+beber)\s+(.+)/i,
+      /\b(?:eu\s+)?(?:n[ãa]o|nunca)\s+(?:como|bebo|consumo|posso\s+comer|posso\s+beber)\s+([^);.]+)/i,
     build: (m, _pt) => ({ kind: "preference", statement: `Não come ${tail(m[1]!)}` }),
   },
   {
@@ -456,10 +456,25 @@ export const parseMeal = (
   const { facts, remainder } = scanFacts(text);
 
   // A comma between two digits is a decimal point, not a list separator.
-  const cleaned = stripNoise(remainder).replace(/(\d),(\d)/g, "$1.$2");
-  const fragments = cleaned
+  // Brackets left empty by a teaching phrase we just lifted out are debris.
+  const cleaned = stripNoise(remainder)
+    .replace(/(\d),(\d)/g, "$1.$2")
+    .replace(/\(\s*\)/g, " ");
+
+  // A bracketed aside is one thought, however many separators are inside it:
+  // "leite (leite magro sem lactose)" must not become "leite" and "lactose".
+  // Mask them, split, then put them back.
+  const asides: string[] = [];
+  const masked = cleaned.replace(/\(([^)]*)\)/g, (_, inner: string) => {
+    asides.push(inner.trim());
+    return `\u0001${asides.length - 1}\u0001`;
+  });
+  const unmask = (text: string): string =>
+    text.replace(/\u0001(\d+)\u0001/g, (_, i: string) => `(${asides[Number(i)] ?? ""})`);
+
+  const fragments = masked
     .split(SEPARATOR)
-    .map((f) => f.trim().replace(OF_PREFIX, ""))
+    .map((f) => unmask(f).trim().replace(OF_PREFIX, ""))
     .filter((f) => f.length > 0 && !STOP_FRAGMENTS.has(deaccent(f.toLowerCase())))
     // A stray "?" or a trailing clause is not a food; a bare number is not one
     // either. Neither should count against coverage.
@@ -469,7 +484,12 @@ export const parseMeal = (
   const unresolved: string[] = [];
 
   for (const fragment of fragments) {
-    const quantity = parseQuantity(fragment);
+    // "Leite (leite magro sem lactose)" — the bracket says which one they mean.
+    const asideMatch = fragment.match(/\(([^)]*)\)/);
+    const aside = asideMatch?.[1]?.trim() ?? "";
+    const bare = fragment.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+
+    const quantity = parseQuantity(bare);
     const name = quantity.rest.replace(/[.!?]+$/, "").trim();
     if (!name || STOP_FRAGMENTS.has(name)) continue;
 
@@ -483,6 +503,16 @@ export const parseMeal = (
 
     let resolved = viaFact ?? resolve(ctx, custom, name);
     let measured: Quantity = { ...quantity, rest: name };
+
+    // The bracket is the more deliberate statement of the two, so it wins when
+    // it resolves to something more specific than the word in front of it.
+    if (!viaFact && aside) {
+      const clarified = resolveAside(ctx, custom, aside);
+      if (clarified && clarified.score > scoreOf(resolved, name)) {
+        resolved = clarified.food;
+        measured = { ...measured, rest: clarified.query };
+      }
+    }
 
     // "Uma barra de proteína" reads as one *bar* of protein powder if the
     // measure is taken at face value. When the fragment matches a food better
@@ -550,6 +580,33 @@ const resolve = (ctx: GroundingContext, custom: Food[], name: string): Food | nu
 
 const scoreOf = (food: Food | null, name: string): number =>
   food ? scoreFood(food, name) : 0;
+
+/**
+ * Resolve a bracketed clarification, shortening it from the right until it
+ * matches. "Leite magro sem lactose" is not in any database; "leite magro" is,
+ * and dropping the trailing qualifier is what gets there.
+ *
+ * Trimming only ever happens inside a bracket, where the user was deliberately
+ * being *more* specific — so the worst case is falling back to the plainer word
+ * they had already written outside it. The same trick applied to bare text
+ * would turn "leite de coco" into milk.
+ */
+const resolveAside = (
+  ctx: GroundingContext,
+  custom: Food[],
+  aside: string,
+): { food: Food; query: string; score: number } | null => {
+  const words = aside.split(/\s+/);
+  let best: { food: Food; query: string; score: number } | null = null;
+  for (let end = words.length; end >= 1; end -= 1) {
+    const query = words.slice(0, end).join(" ");
+    const food = resolve(ctx, custom, query);
+    if (!food) continue;
+    const score = scoreFood(food, query);
+    if (!best || score > best.score) best = { food, query, score };
+  }
+  return best;
+};
 
 const describePortion = (quantity: Quantity, fragment: string): string => {
   if (quantity.unit) return `${quantity.amount} ${quantity.unit}`;

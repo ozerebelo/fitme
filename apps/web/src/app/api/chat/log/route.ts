@@ -207,8 +207,39 @@ export async function POST(request: Request): Promise<NextResponse> {
         { status: 429 },
       );
     }
+    // A bare "it didn't work" costs a round of guessing to diagnose. Say which
+    // of the handful of things it actually was, and log the rest for the
+    // deployment's own logs.
+    if (error instanceof Anthropic.NotFoundError) {
+      return NextResponse.json(
+        {
+          error: "no_model",
+          message: `The model "${process.env.FITME_PARSE_MODEL ?? "claude-opus-5"}" is not available to this API key. Set FITME_PARSE_MODEL to one that is.`,
+        },
+        { status: 502 },
+      );
+    }
+    if (error instanceof Anthropic.PermissionDeniedError) {
+      return NextResponse.json(
+        { error: "forbidden", message: "The API key does not have access to this model." },
+        { status: 502 },
+      );
+    }
+    if (error instanceof Anthropic.APIConnectionError) {
+      return NextResponse.json(
+        { error: "unreachable", message: "Could not reach the Anthropic API. Check the connection and try again." },
+        { status: 502 },
+      );
+    }
+    console.error("chat/log failed", error);
     return NextResponse.json(
-      { error: "unknown", message: "That didn't go through. You can still log it manually." },
+      {
+        error: "unknown",
+        message:
+          error instanceof Anthropic.APIError
+            ? `The model call failed (${error.status ?? "no status"}). You can still log it manually.`
+            : "That didn't go through. You can still log it manually.",
+      },
       { status: 502 },
     );
   }
