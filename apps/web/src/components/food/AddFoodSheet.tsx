@@ -418,7 +418,7 @@ export const PortionEditor = ({
 /*                              Custom food form                              */
 /* -------------------------------------------------------------------------- */
 
-const CustomFoodForm = ({
+export const CustomFoodForm = ({
   initialName,
   onCancel,
   onCreate,

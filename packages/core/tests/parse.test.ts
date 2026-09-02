@@ -131,7 +131,7 @@ describe("parsing a meal", () => {
   it("reports what it could not resolve instead of guessing", () => {
     const result = parseMeal("a banana and some wagyu tomahawk", ctx);
     expect(result.items.map((i) => i.name)).toEqual(["Banana"]);
-    expect(result.unresolved).toEqual(["some wagyu tomahawk"]);
+    expect(result.unresolved.map((u) => u.fragment)).toEqual(["some wagyu tomahawk"]);
     expect(result.confident).toBe(false);
     expect(result.coverage).toBe(0.5);
   });

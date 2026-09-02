@@ -130,7 +130,8 @@ describe("parsing Portuguese meals", () => {
   it("reports what it cannot resolve instead of guessing", () => {
     const result = parseMeal("um pacote de bolachas", ctx);
     expect(result.confident).toBe(false);
-    expect(result.unresolved).toEqual(["um pacote de bolachas"]);
+    expect(result.unresolved.map((u) => u.fragment)).toEqual(["um pacote de bolachas"]);
+    expect(result.unresolved[0]!.name).toBe("pacote de bolachas");
   });
 
   it("handles a sentence that mixes the two languages", () => {

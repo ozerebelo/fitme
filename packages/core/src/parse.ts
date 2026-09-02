@@ -115,10 +115,22 @@ export interface ParsedFact {
   defaultGrams?: number;
 }
 
+/**
+ * A fragment the parser could not place. Carries the food name separately from
+ * the wording it appeared in, because the useful thing to offer next is
+ * "create *evowhey da hsn*", not "create *20g evowhey da hsn*".
+ */
+export interface UnresolvedItem {
+  /** As the user wrote it, for showing back to them. */
+  fragment: string;
+  /** Just the part that names a food, for a search or a new custom food. */
+  name: string;
+}
+
 export interface LocalParseResult {
   items: GroundedFoodItem[];
   /** Fragments that could not be resolved to a food. */
-  unresolved: string[];
+  unresolved: UnresolvedItem[];
   facts: ParsedFact[];
   /** Share of food-bearing fragments that resolved, 0..1. */
   coverage: number;
@@ -481,7 +493,7 @@ export const parseMeal = (
     .filter((f) => /[a-zà-ÿ]{2}/i.test(f));
 
   const items: GroundedFoodItem[] = [];
-  const unresolved: string[] = [];
+  const unresolved: UnresolvedItem[] = [];
 
   for (const fragment of fragments) {
     // "Leite (leite magro sem lactose)" — the bracket says which one they mean.
@@ -528,7 +540,7 @@ export const parseMeal = (
 
     const food = resolved;
     if (!food) {
-      unresolved.push(fragment);
+      unresolved.push({ fragment, name: aside || name });
       continue;
     }
 

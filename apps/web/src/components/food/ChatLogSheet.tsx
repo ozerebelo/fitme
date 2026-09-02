@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { MealType, MemoryFact, RawFoodItem } from "@fitme/core";
+import type { Food, MealType, MemoryFact, RawFoodItem, UnresolvedItem } from "@fitme/core";
 import {
   createFact,
   groundItems,
@@ -19,6 +19,7 @@ import {
   toReviewRows,
 } from "./ItemReview";
 import { Badge, Button, Sheet, TextInput } from "@/components/ui";
+import { CustomFoodForm } from "./AddFoodSheet";
 import { SparkIcon } from "@/components/icons";
 
 /**
@@ -75,8 +76,8 @@ const localReply = (message: string, names: string[]): string => {
 /** As above, for the half-understood case when the model was unreachable. */
 const partialReply = (message: string, names: string[], unresolved: string[]): string =>
   looksPortuguese(message)
-    ? `Consegui ${names.join(", ")} aqui no telemóvel. Não percebi ${unresolved.join(", ")} — acrescenta esses pela pesquisa ou por adição rápida.`
-    : `I worked out ${names.join(", ")} on this device. I could not place ${unresolved.join(", ")} — add those with search or a quick add.`;
+    ? `Consegui ${names.join(", ")} aqui no telemóvel. Não percebi ${unresolved.join(", ")}.`
+    : `I worked out ${names.join(", ")} on this device. I could not place ${unresolved.join(", ")}.`;
 
 export const ChatLogSheet = ({
   open,
@@ -89,7 +90,7 @@ export const ChatLogSheet = ({
   date: string;
   onClose: () => void;
 }) => {
-  const { foods, data, addEntries, rememberFacts, markFactsUsed } = useApp();
+  const { foods, data, addEntries, addCustomFood, rememberFacts, markFactsUsed } = useApp();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -97,6 +98,11 @@ export const ChatLogSheet = ({
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [learned, setLearned] = useState<MemoryFact[]>([]);
   const [localOnly, setLocalOnly] = useState(false);
+  /** Fragments no database could place — each one offers to become a food. */
+  const [unresolved, setUnresolved] = useState<UnresolvedItem[]>([]);
+  const [creating, setCreating] = useState<UnresolvedItem | null>(null);
+  /** Kept so adding a food can re-read the original sentence. */
+  const [lastMessage, setLastMessage] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -106,7 +112,38 @@ export const ChatLogSheet = ({
     setError("");
     setRows([]);
     setLearned([]);
+    setUnresolved([]);
+    setCreating(null);
+    setLastMessage("");
   }, [open]);
+
+  /**
+   * A food was just created from something we could not place. Re-read the
+   * original sentence with it in scope rather than asking them to retype it —
+   * the portion they wrote ("20g") is in that sentence and should survive.
+   */
+  const adoptNewFood = (food: Food): void => {
+    addCustomFood(food);
+    setCreating(null);
+
+    const reparsed = parseMeal(lastMessage, {
+      foods: [...foods, food],
+      memory: data.memory,
+    });
+    setRows(toReviewRows(reparsed.items));
+    setUnresolved(reparsed.unresolved);
+    setLocalOnly(true);
+    setError("");
+    setTurns((current) => [
+      ...current,
+      {
+        role: "assistant",
+        content: looksPortuguese(lastMessage)
+          ? `Guardei ${food.name}. Da próxima vez fica logo reconhecido.`
+          : `Saved ${food.name}. It will be recognised from now on.`,
+      },
+    ]);
+  };
 
   const send = async (text: string): Promise<void> => {
     const message = text.trim();
@@ -117,6 +154,9 @@ export const ChatLogSheet = ({
     setInput("");
     setBusy(true);
     setError("");
+    setLastMessage(message);
+    setUnresolved([]);
+    setCreating(null);
 
     /*
      * Try to understand it here first.
@@ -163,6 +203,7 @@ export const ChatLogSheet = ({
           content: localReply(message, local.items.map((i) => i.name.toLowerCase())),
         },
       ]);
+      setUnresolved([]);
       setLocalOnly(true);
       setBusy(false);
       return;
@@ -188,17 +229,23 @@ export const ChatLogSheet = ({
               content: partialReply(
                 message,
                 local.items.map((i) => i.name.toLowerCase()),
-                local.unresolved,
+                local.unresolved.map((u) => u.fragment),
               ),
             },
           ]);
+          setUnresolved(local.unresolved);
           setLocalOnly(true);
           return;
         }
+        // Nothing was understood and the model is unreachable. The message is
+        // still worth something: offer to turn what it named into a food, which
+        // fixes this sentence and every future one containing it.
+        if (local && local.unresolved.length > 0) setUnresolved(local.unresolved);
         setError(json.message ?? "That didn't go through.");
         return;
       }
       setLocalOnly(false);
+      setUnresolved([]);
 
       setTurns([...next, { role: "assistant", content: json.reply }]);
 
@@ -338,6 +385,39 @@ export const ChatLogSheet = ({
               </p>
             )}
           </div>
+        )}
+
+        {creating ? (
+          <div className="rounded-xl border border-border p-3">
+            <p className="mb-3 text-sm leading-relaxed text-muted">
+              Add <span className="font-medium text-fg">{creating.name}</span> once and it is
+              yours from then on — recognised instantly, offline, with your numbers rather
+              than an estimate. Copy them off the label.
+            </p>
+            <CustomFoodForm
+              initialName={creating.name}
+              onCancel={() => setCreating(null)}
+              onCreate={adoptNewFood}
+            />
+          </div>
+        ) : (
+          unresolved.length > 0 && (
+            <div className="rounded-xl border border-border p-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-faint">
+                Not in your foods yet
+              </p>
+              <ul className="mt-2 space-y-2">
+                {unresolved.map((item) => (
+                  <li key={item.fragment} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 truncate text-sm">{item.fragment}</span>
+                    <Button size="sm" onClick={() => setCreating(item)}>
+                      Add as a food
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
         )}
 
         {rows.length > 0 && (
