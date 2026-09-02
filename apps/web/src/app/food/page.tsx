@@ -15,7 +15,9 @@ import {
 } from "@fitme/core";
 import { useApp } from "@/lib/state";
 import { RequireProfile } from "@/components/Guard";
-import { AddFoodSheet } from "@/components/food/AddFoodSheet";
+import { AddFoodSheet, type AddFoodTool } from "@/components/food/AddFoodSheet";
+import { ChatLogSheet } from "@/components/food/ChatLogSheet";
+import { BarcodeScanner } from "@/components/food/BarcodeScanner";
 import { PhotoMealSheet } from "@/components/food/PhotoMealSheet";
 import { MACRO_COLORS, MacroBars } from "@/components/charts";
 import {
@@ -32,6 +34,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   PlusIcon,
+  SparkIcon,
   TrashIcon,
 } from "@/components/icons";
 
@@ -48,7 +51,15 @@ function FoodDiary() {
 
   const [date, setDate] = useState(toDateKey());
   const [addOpen, setAddOpen] = useState(false);
-  const [photoOpen, setPhotoOpen] = useState(params.get("capture") === "1");
+  const [tool, setTool] = useState<AddFoodTool | null>(
+    params.get("capture") === "1"
+      ? "photo"
+      : params.get("describe") === "1"
+        ? "chat"
+        : params.get("scan") === "1"
+          ? "barcode"
+          : null,
+  );
   const [meal, setMeal] = useState<MealType>(
     (params.get("meal") as MealType) || defaultMealForTime(),
   );
@@ -74,10 +85,14 @@ function FoodDiary() {
         title="Food"
         subtitle={`${Math.round(totals.kcal)} of ${targets.kcal} kcal`}
         action={
-          <Button size="sm" onClick={() => setPhotoOpen(true)}>
-            <CameraIcon className="h-4 w-4" />
-            Photo
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => setTool("chat")} aria-label="Describe a meal">
+              <SparkIcon className="h-4 w-4" />
+            </Button>
+            <Button size="sm" onClick={() => setTool("photo")} aria-label="Photograph a meal">
+              <CameraIcon className="h-4 w-4" />
+            </Button>
+          </div>
         }
       />
 
@@ -194,6 +209,7 @@ function FoodDiary() {
                             <span className="flex items-center gap-2">
                               <span className="truncate font-medium">{entry.name}</span>
                               {entry.source === "photo" && <Badge tone="info">Photo</Badge>}
+                              {entry.source === "chat" && <Badge tone="info">Described</Badge>}
                               {entry.source === "quick_add" && <Badge>Quick</Badge>}
                             </span>
                             <span className="mt-0.5 block truncate text-xs text-faint">
@@ -226,17 +242,31 @@ function FoodDiary() {
         meal={meal}
         date={date}
         onClose={() => setAddOpen(false)}
-        onCapture={() => {
+        onOpenTool={(next) => {
           setAddOpen(false);
-          setPhotoOpen(true);
+          setTool(next);
         }}
       />
 
-      <PhotoMealSheet
-        open={photoOpen}
+      <ChatLogSheet
+        open={tool === "chat"}
         meal={meal}
         date={date}
-        onClose={() => setPhotoOpen(false)}
+        onClose={() => setTool(null)}
+      />
+
+      <PhotoMealSheet
+        open={tool === "photo"}
+        meal={meal}
+        date={date}
+        onClose={() => setTool(null)}
+      />
+
+      <BarcodeScanner
+        open={tool === "barcode"}
+        meal={meal}
+        date={date}
+        onClose={() => setTool(null)}
       />
 
       <EditEntrySheet

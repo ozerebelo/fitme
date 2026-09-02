@@ -163,3 +163,28 @@ export const TrophyIcon = (p: IconProps) => (
     <path d="M10 17h4v3h-4z" />
   </Svg>
 );
+
+export const BarcodeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 6v12" />
+    <path d="M6.5 6v12" />
+    <path d="M10 6v12" />
+    <path d="M14 6v12" />
+    <path d="M17.5 6v12" />
+    <path d="M21 6v12" />
+  </Svg>
+);
+
+export const DropletIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3Z" />
+  </Svg>
+);
+
+export const BrainIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9.5 4.5A2.5 2.5 0 0 0 7 7a2.5 2.5 0 0 0-1.5 4.5A2.5 2.5 0 0 0 7 16a2.5 2.5 0 0 0 2.5 2.5V4.5Z" />
+    <path d="M14.5 4.5A2.5 2.5 0 0 1 17 7a2.5 2.5 0 0 1 1.5 4.5A2.5 2.5 0 0 1 17 16a2.5 2.5 0 0 1-2.5 2.5V4.5Z" />
+    <path d="M12 4v16" />
+  </Svg>
+);

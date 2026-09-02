@@ -20,27 +20,31 @@ import {
   Sheet,
   TextInput,
 } from "@/components/ui";
-import { CameraIcon, PlusIcon } from "@/components/icons";
+import { CameraIcon, PlusIcon, SparkIcon } from "@/components/icons";
 
 type View = "list" | "portion" | "custom" | "quick";
+
+export type AddFoodTool = "photo" | "chat" | "barcode";
 
 export const AddFoodSheet = ({
   open,
   meal,
   date,
   onClose,
-  onCapture,
+  onOpenTool,
 }: {
   open: boolean;
   meal: MealType;
   date: string;
   onClose: () => void;
-  onCapture: () => void;
+  onOpenTool: (tool: AddFoodTool) => void;
 }) => {
   const { foods, data, addEntries, addCustomFood } = useApp();
   const [view, setView] = useState<View>("list");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Food | null>(null);
+  const [branded, setBranded] = useState<Food[]>([]);
+  const [brandedState, setBrandedState] = useState<"idle" | "loading" | "done">("idle");
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,6 +64,40 @@ export const AddFoodSheet = ({
     () => searchFoods(foods, query, { recentIds: data.recentFoodIds, limit: 40 }),
     [foods, query, data.recentFoodIds],
   );
+
+  /*
+   * Branded products, fetched only once the local catalog has been given a fair
+   * chance. Most searches are for ingredients and are answered instantly from
+   * memory; going to the network for those would make the common case slower to
+   * serve the uncommon one.
+   */
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 3) {
+      setBranded([]);
+      setBrandedState("idle");
+      return;
+    }
+    let cancelled = false;
+    setBrandedState("loading");
+    const timer = setTimeout(() => {
+      void fetch(`/api/foods/lookup?q=${encodeURIComponent(term)}`)
+        .then((r) => (r.ok ? r.json() : { foods: [] }))
+        .then((json: { foods?: Food[] }) => {
+          if (cancelled) return;
+          const known = new Set(foods.map((f) => f.barcode).filter(Boolean));
+          setBranded((json.foods ?? []).filter((f) => !f.barcode || !known.has(f.barcode)));
+          setBrandedState("done");
+        })
+        .catch(() => {
+          if (!cancelled) setBrandedState("done");
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, foods]);
 
   const commit = (entries: FoodEntry[]): void => {
     addEntries(entries);
@@ -92,17 +130,20 @@ export const AddFoodSheet = ({
             enterKeyHint="search"
           />
 
-          <div className="grid grid-cols-3 gap-2">
-            <Button size="sm" onClick={onCapture}>
+          <div className="grid grid-cols-4 gap-2">
+            <Button size="sm" onClick={() => onOpenTool("chat")}>
+              <SparkIcon className="h-4 w-4" />
+              Describe
+            </Button>
+            <Button size="sm" onClick={() => onOpenTool("photo")}>
               <CameraIcon className="h-4 w-4" />
               Photo
             </Button>
+            <Button size="sm" onClick={() => onOpenTool("barcode")}>
+              Scan
+            </Button>
             <Button size="sm" onClick={() => setView("quick")}>
               Quick add
-            </Button>
-            <Button size="sm" onClick={() => setView("custom")}>
-              <PlusIcon className="h-4 w-4" />
-              New food
             </Button>
           </div>
 
@@ -144,12 +185,61 @@ export const AddFoodSheet = ({
             })}
           </ul>
 
-          {results.length === 0 && (
+          {branded.length > 0 && (
+            <>
+              <p className="px-1 pt-2 text-xs font-semibold uppercase tracking-wider text-faint">
+                Branded products
+              </p>
+              <ul className="divide-y divide-border">
+                {branded.map((food) => (
+                  <li key={food.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Keep it locally so the next search is instant and offline.
+                        addCustomFood(food);
+                        setSelected(food);
+                        setView("portion");
+                      }}
+                      className="flex w-full items-center justify-between gap-3 py-3 text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-2">
+                          <span className="truncate font-medium">{food.name}</span>
+                          <Badge tone="info">Branded</Badge>
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-faint">
+                          {food.brand ? `${food.brand} · ` : ""}
+                          {Math.round(food.per100.kcal)} kcal · P{" "}
+                          {Math.round(food.per100.protein)} · C {Math.round(food.per100.carbs)} · F{" "}
+                          {Math.round(food.per100.fat)} per 100 {food.basis}
+                        </span>
+                      </span>
+                      <PlusIcon className="h-5 w-5 shrink-0 text-faint" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {results.length === 0 && branded.length === 0 && (
             <div className="py-8 text-center text-sm text-muted">
-              <p>No match for “{query}”.</p>
-              <Button className="mt-3" size="sm" onClick={() => setView("custom")}>
-                Create it as a new food
-              </Button>
+              {brandedState === "loading" ? (
+                <p>Checking branded products…</p>
+              ) : (
+                <>
+                  <p>No match for “{query}”.</p>
+                  <div className="mt-3 flex justify-center gap-2">
+                    <Button size="sm" onClick={() => onOpenTool("barcode")}>
+                      Scan a barcode
+                    </Button>
+                    <Button size="sm" onClick={() => setView("custom")}>
+                      Create it
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

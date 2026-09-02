@@ -13,10 +13,15 @@ signal.
 
 **Nutrition**
 - Food diary with a curated database, custom foods, and calorie-only quick adds
+- **Describe a meal in words** — "two eggs, toast with butter and a coffee" —
+  parsed into entries, with follow-up corrections ("make that two")
+- **Memory** — teach it once that "milk" means your specific carton at your usual
+  250 ml, and every future mention resolves to that exact food
 - **Photo meal logging** — photograph a plate, Claude identifies the components
-  and estimates portions, then each item is matched against the food database so
-  the macros come from real composition data rather than a guess
+  and estimates portions
+- **Barcode scanning**, backed by Open Food Facts, plus branded-product search
 - Calorie and macro targets derived from your body metrics, goal and activity
+- Water tracking against a bodyweight- and training-derived target
 
 **Training**
 - In-gym set logger: previous session's numbers inline on every row, big tap
@@ -77,6 +82,9 @@ packages/core        @fitme/core — the domain layer, pure TypeScript, no deps
   strength.ts        e1RM, RPE tables, volume landmarks, progression, plate maths
   programs.ts        split selection and programme generation
   analytics.ts       trend weight, adherence, rollups
+  memory.ts          user-taught facts and how they are matched
+  grounding.ts       resolving model output against real nutrition data
+  openfoodfacts.ts   normalising crowd-sourced branded products
   coach/             the nutritionist and trainer rule engines
   importers/strong   Strong CSV import
   data/              seed food and exercise catalogs
@@ -109,13 +117,23 @@ where textbook numbers stop — it captures your own NEAT adaptation. Weight is
 smoothed before the comparison, because raw scale readings swing ±1.5 kg on water
 and gut contents alone and would swamp the signal.
 
-**Photo logging splits the problem.** A vision model is genuinely good at
-identifying food and judging portion size from a picture; it should not be the
-source of truth for how much protein is in 100 g of chicken. So the model
-returns items and gram estimates, and each one is matched against the food
-database — matched items get real composition data scaled to the portion, and
-only unmatched items fall back to the model's own estimate. The UI labels which
-is which, and portions stay adjustable.
+**Language models identify; databases quantify.** A model is genuinely good at
+reading a sentence or a photograph and working out what was eaten and roughly
+how much. It should never be the source of truth for how much protein is in
+100 g of chicken. So both the photo and the chat route return *raw* items, and a
+single grounding step resolves each one against, in order: a fact you taught it,
+your own foods, the seed catalog, and only then the model's own estimate. Every
+row in the review step says which tier it came from.
+
+That grounding runs on the device, not in the API route — your custom foods and
+your memory never leave it, so the client is the only place where all four tiers
+actually exist.
+
+**Memory is inspectable.** A memory you cannot audit is a liability: one wrong
+fact silently distorts every future entry with no way to find out why. So
+everything the app has learned is listed in Settings in plain language, editable
+and deletable, with a note on which facts are linked to a real food and which
+are still estimates.
 
 **Insights show their working.** Every finding carries the numbers it came from,
 behind a "show the numbers" toggle. A coach you cannot interrogate is a horoscope.
@@ -125,6 +143,48 @@ short debounce. Because that write is asynchronous, a page torn down mid-write �
 locking your phone right after ticking a set — could lose it. So on `pagehide`
 and `visibilitychange` a synchronous localStorage journal is written too, and the
 newer of the two wins on load.
+
+---
+
+## Deploying
+
+The app is local-first, so there is no database to provision. Vercel plus one
+environment variable is the whole deployment.
+
+1. Import the repo on Vercel and set **Root Directory** to `apps/web`. The npm
+   workspace is detected automatically and `@fitme/core` is compiled as part of
+   the app build.
+2. Set `ANTHROPIC_API_KEY` (see `apps/web/.env.example` for the optional ones).
+3. Deploy. Open it on your phone and use *Add to Home Screen* — it installs as a
+   standalone app and the workout logger keeps working offline.
+
+Two notes worth knowing:
+
+- The photo route can take 20–40 seconds. Its `maxDuration` is set to 60 s; if
+  your plan caps function duration below that, set `FITME_PARSE_EFFORT=low` and
+  lower the effort in `api/vision/meal/route.ts` to match.
+- Open Food Facts asks callers to identify themselves — set
+  `OPENFOODFACTS_USER_AGENT` to something naming your deployment.
+
+### Do you need a database?
+
+Not to ship. You need one when you want any of: the same data on your phone *and*
+your laptop, history that survives clearing site data or losing the device, or
+more than one user.
+
+When that time comes, Neon is a good fit and the shape is already set up for it.
+The store sits behind a small interface (`lib/store.ts`) and the whole app state
+is one JSON document with an `updatedAt` stamp, so the first useful version of
+sync is deliberately unambitious:
+
+- Neon Postgres, one row per user: `(user_id, document jsonb, updated_at)`
+- Push on the same hook the local journal already uses (`visibilitychange`),
+  pull on load, newer `updatedAt` wins
+- Auth via a magic link — for a single user, even a shared secret is defensible
+
+That is last-write-wins, which is correct for one person on two devices and
+wrong for a team. Splitting into per-entity rows with a change log is the upgrade
+path if it ever needs to be more than that; nothing above forecloses it.
 
 ---
 
@@ -147,11 +207,11 @@ no-op** — re-importing a full export only adds what is genuinely new.
 
 ## Not built yet
 
-- Barcode scanning, and a branded-food database (Open Food Facts) behind the
-  existing food-search interface
-- Accounts and cross-device sync — the storage layer is behind a small interface,
-  so a server driver slots in without touching the screens
+- Accounts and cross-device sync — see "Do you need a database?" above
 - A native wrapper for Apple Health / Health Connect
+- Barcode scanning uses the browser's `BarcodeDetector`, which Safari does not
+  implement; on iOS the barcode is typed instead. Bundling a WASM decoder would
+  close that gap
 - ESLint is not configured; `tsc --noEmit` and the test suite are the gates
 
 ---

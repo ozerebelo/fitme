@@ -2,17 +2,15 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import { FOODS, matchFoodByName, nutrientsFor } from "@fitme/core";
-
 /**
  * Photo meal analysis.
  *
  * The model is used for what it is uniquely good at — recognising what is on
- * the plate and estimating how much of it there is — and *not* trusted for
- * nutrition composition. Every identified item is matched against the food
- * catalog first; when it matches, the macros come from real composition data
- * scaled to the estimated portion. The model's own macro estimate is only used
- * for items the catalog does not know about.
+ * the plate and estimating how much of it there is — and is *not* trusted for
+ * nutrition composition. Identified items come back raw and are grounded on the
+ * client against the user's remembered facts, their own foods, and the catalog
+ * (see `grounding.ts` in @fitme/core). Grounding lives there rather than here
+ * because that is where the user's data actually is.
  *
  * That split matters: portion size is a judgement call a vision model can make
  * from a picture, while "how much protein is in 100 g of chicken breast" is a
@@ -46,6 +44,8 @@ const MealItemSchema = z.object({
   fat: z.number().describe("Estimated grams of fat for the whole portion."),
 });
 
+const MAX_MEMORY_CHARS = 6000;
+
 const MealAnalysisSchema = z.object({
   isFood: z.boolean().describe("False if the image does not show food."),
   mealDescription: z.string().describe("One short sentence describing the meal."),
@@ -69,19 +69,9 @@ How to approach it:
 - Be honest in your confidence scores. A clearly lit, single-item plate deserves high confidence; a mixed stew in a bowl does not, because the composition is hidden.
 - Where a portion is genuinely ambiguous, estimate the middle of the plausible range rather than the flattering end.
 
-If the image does not show food, set isFood to false and return no items.`;
+Where the person has taught you what one of their words means — a specific brand of milk, their usual protein powder — use that product's name for the matching item.
 
-interface ResolvedItem {
-  name: string;
-  description: string;
-  grams: number;
-  confidence: number;
-  nutrients: { kcal: number; protein: number; carbs: number; fat: number; fiber?: number };
-  /** Where the macros came from — shown in the UI so estimates are labelled. */
-  basis: "catalog" | "estimate";
-  matchedFoodId?: string;
-  matchedFoodName?: string;
-}
+If the image does not show food, set isFood to false and return no items.`;
 
 export async function POST(request: Request): Promise<NextResponse> {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -95,7 +85,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  let body: { imageBase64?: string; mediaType?: string; hint?: string };
+  let body: { imageBase64?: string; mediaType?: string; hint?: string; memory?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -106,6 +96,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const { imageBase64, mediaType, hint } = body;
+  const memory = (body.memory ?? "").slice(0, MAX_MEMORY_CHARS);
   if (!imageBase64) {
     return NextResponse.json(
       { error: "bad_request", message: "No image was supplied." },
@@ -131,7 +122,15 @@ export async function POST(request: Request): Promise<NextResponse> {
     const response = await client.messages.parse({
       model: "claude-opus-5",
       max_tokens: 16000,
-      system: SYSTEM_PROMPT,
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        {
+          type: "text",
+          text: memory
+            ? `Things this person has taught you:\n${memory}`
+            : "This person has not taught you anything yet.",
+        },
+      ],
       thinking: { type: "adaptive" },
       output_config: {
         effort: "medium",
@@ -189,43 +188,19 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    // Ground every item against the catalog. A match replaces the model's macro
-    // guess with real composition data at the estimated portion size.
-    const items: ResolvedItem[] = analysis.items.map((item) => {
-      const grams = Math.max(1, Math.round(item.estimatedGrams));
-      const match = matchFoodByName(FOODS, item.name);
-
-      if (match) {
-        return {
-          name: match.name,
-          description: item.description,
-          grams,
-          confidence: clamp01(item.confidence),
-          nutrients: nutrientsFor(match, grams),
-          basis: "catalog",
-          matchedFoodId: match.id,
-          matchedFoodName: match.name,
-        };
-      }
-
-      return {
-        name: item.name,
-        description: item.description,
-        grams,
-        confidence: clamp01(item.confidence) * 0.85, // unverified composition
-        nutrients: {
-          kcal: Math.round(item.kcal),
-          protein: round1(item.protein),
-          carbs: round1(item.carbs),
-          fat: round1(item.fat),
-        },
-        basis: "estimate",
-      };
-    });
-
     return NextResponse.json({
       mealDescription: analysis.mealDescription,
-      items,
+      // Raw items — the client grounds them against the user's own data.
+      items: analysis.items.map((item) => ({
+        name: item.name,
+        description: item.description,
+        grams: Math.max(1, Math.round(item.estimatedGrams)),
+        confidence: clamp01(item.confidence),
+        kcal: Math.round(item.kcal),
+        protein: round1(item.protein),
+        carbs: round1(item.carbs),
+        fat: round1(item.fat),
+      })),
       assumptions: analysis.assumptions,
       overallConfidence: clamp01(analysis.overallConfidence),
     });

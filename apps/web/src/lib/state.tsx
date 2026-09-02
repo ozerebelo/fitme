@@ -16,6 +16,7 @@ import type {
   Exercise,
   Food,
   FoodEntry,
+  MemoryFact,
   Profile,
   Program,
   WorkoutSession,
@@ -24,6 +25,8 @@ import {
   EXERCISES,
   FOODS,
   buildCoachReport,
+  findConflictingFact,
+  touchFact,
   generateProgram,
   resolveTargets,
   toDateKey,
@@ -61,6 +64,13 @@ interface AppState {
 
   addCustomFood: (food: Food) => void;
 
+  /** Teach the app something. Re-teaching an alias updates it in place. */
+  rememberFacts: (facts: MemoryFact[]) => void;
+  updateFact: (fact: MemoryFact) => void;
+  forgetFact: (id: string) => void;
+  markFactsUsed: (ids: string[]) => void;
+
+  logWater: (date: string, deltaMl: number) => void;
   logWeight: (metric: BodyMetric) => void;
   removeMetric: (id: string) => void;
 
@@ -235,6 +245,72 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     [patch],
   );
 
+  const rememberFacts = useCallback(
+    (facts: MemoryFact[]) => {
+      if (facts.length === 0) return;
+      patch((current) => {
+        let memory = current.memory;
+        for (const fact of facts) {
+          // Re-teaching "milk means X" should correct the existing fact rather
+          // than leave two contradictory ones in play.
+          const existing = findConflictingFact(memory, fact);
+          memory = existing
+            ? memory.map((f) =>
+                f.id === existing.id
+                  ? { ...fact, id: existing.id, createdAt: existing.createdAt, usageCount: existing.usageCount }
+                  : f,
+              )
+            : [...memory, fact];
+        }
+        return { ...current, memory };
+      });
+    },
+    [patch],
+  );
+
+  const updateFact = useCallback(
+    (fact: MemoryFact) => {
+      patch((current) => ({
+        ...current,
+        memory: current.memory.map((f) =>
+          f.id === fact.id ? { ...fact, updatedAt: new Date().toISOString() } : f,
+        ),
+      }));
+    },
+    [patch],
+  );
+
+  const forgetFact = useCallback(
+    (id: string) => {
+      patch((current) => ({ ...current, memory: current.memory.filter((f) => f.id !== id) }));
+    },
+    [patch],
+  );
+
+  const markFactsUsed = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      patch((current) => ({
+        ...current,
+        memory: current.memory.map((f) => (ids.includes(f.id) ? touchFact(f) : f)),
+      }));
+    },
+    [patch],
+  );
+
+  const logWater = useCallback(
+    (date: string, deltaMl: number) => {
+      patch((current) => ({
+        ...current,
+        water: {
+          ...current.water,
+          [date]: Math.max(0, (current.water[date] ?? 0) + deltaMl),
+        },
+      }));
+    },
+    [patch],
+  );
+
   const logWeight = useCallback(
     (metric: BodyMetric) => {
       patch((current) => {
@@ -393,6 +469,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       updateEntry,
       removeEntry,
       addCustomFood,
+      rememberFacts,
+      updateFact,
+      forgetFact,
+      markFactsUsed,
+      logWater,
       logWeight,
       removeMetric,
       saveSession,
@@ -405,6 +486,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     [
       ready, data, foods, exercises, exerciseMap, targets, coach, currentWeightKg,
       setProfile, updateSettings, addEntries, updateEntry, removeEntry, addCustomFood,
+      rememberFacts, updateFact, forgetFact, markFactsUsed, logWater,
       logWeight, removeMetric, saveSession, removeSession, importSessions, setProgram,
       regenerateProgram, replaceAll,
     ],

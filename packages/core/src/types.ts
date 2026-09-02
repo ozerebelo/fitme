@@ -157,7 +157,12 @@ export interface Food {
 
 /** How a logged food's nutrition was determined. Surfaced in the UI so the user
  *  knows when a number is a photo estimate rather than a database lookup. */
-export type NutritionSource = "catalog" | "custom" | "quick_add" | "photo";
+export type NutritionSource =
+  | "catalog"
+  | "custom"
+  | "quick_add"
+  | "photo"
+  | "chat";
 
 export interface FoodEntry {
   id: string;

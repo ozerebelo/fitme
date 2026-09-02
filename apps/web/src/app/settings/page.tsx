@@ -12,6 +12,7 @@ import type {
 import { ACTIVITY_LABELS, RATE_BOUNDS, generateProgram } from "@fitme/core";
 import { useApp } from "@/lib/state";
 import { RequireProfile } from "@/components/Guard";
+import { MemoryPanel } from "@/components/settings/MemoryPanel";
 import { StrongImport } from "@/components/settings/StrongImport";
 import {
   Button,
@@ -25,7 +26,7 @@ import {
   Sheet,
   TextInput,
 } from "@/components/ui";
-import { exportData, parseImport } from "@/lib/store";
+import { emptyData, exportData, parseImport } from "@/lib/store";
 import { weight as formatWeight } from "@/lib/format";
 
 const EQUIPMENT: { value: Equipment; label: string }[] = [
@@ -374,6 +375,9 @@ function Settings() {
           </div>
         </Card>
 
+        {/* ------------------------------ Memory ----------------------------- */}
+        <MemoryPanel />
+
         {/* ------------------------------- Data ------------------------------ */}
         <StrongImport />
 
@@ -381,8 +385,9 @@ function Settings() {
           <h2 className="font-semibold">Your data</h2>
           <p className="mt-1.5 text-sm leading-relaxed text-muted">
             {data.entries.length} food entries · {data.sessions.length} sessions ·{" "}
-            {data.metrics.length} weigh-ins, all stored locally in this browser. Back it up
-            before switching device or clearing site data.
+            {data.metrics.length} weigh-ins · {data.memory.length} remembered facts, all
+            stored locally in this browser. Back it up before switching device or clearing
+            site data.
           </p>
 
           <input
@@ -426,19 +431,8 @@ function Settings() {
             <Button
               variant="danger"
               onClick={() => {
-                replaceAll({
-                  version: 1,
-                  profile: null,
-                  customFoods: [],
-                  customExercises: [],
-                  entries: [],
-                  sessions: [],
-                  metrics: [],
-                  program: null,
-                  recentFoodIds: [],
-                  settings: data.settings,
-                  updatedAt: new Date().toISOString(),
-                });
+                // Built from emptyData() so new fields cannot be forgotten here.
+                replaceAll({ ...emptyData(), settings: data.settings });
                 router.push("/onboarding");
               }}
             >

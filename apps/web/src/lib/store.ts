@@ -3,6 +3,7 @@ import type {
   Exercise,
   Food,
   FoodEntry,
+  MemoryFact,
   Profile,
   Program,
   WorkoutSession,
@@ -44,6 +45,10 @@ export interface AppData {
   sessions: WorkoutSession[];
   metrics: BodyMetric[];
   program: Program | null;
+  /** Things the user has taught the app about how they eat. */
+  memory: MemoryFact[];
+  /** Millilitres of water per date key. */
+  water: Record<string, number>;
   /** Food ids in most-recently-used order, for search ranking. */
   recentFoodIds: string[];
   settings: AppSettings;
@@ -66,6 +71,8 @@ export const emptyData = (): AppData => ({
   sessions: [],
   metrics: [],
   program: null,
+  memory: [],
+  water: {},
   recentFoodIds: [],
   settings: { ...DEFAULT_SETTINGS },
   updatedAt: new Date().toISOString(),
@@ -92,6 +99,8 @@ export const migrate = (raw: unknown): AppData => {
     entries: data.entries ?? [],
     sessions: data.sessions ?? [],
     metrics: data.metrics ?? [],
+    memory: data.memory ?? [],
+    water: data.water ?? {},
     recentFoodIds: data.recentFoodIds ?? [],
     settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
   };

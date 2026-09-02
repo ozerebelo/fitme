@@ -16,12 +16,16 @@ import { RequireProfile } from "@/components/Guard";
 import { CalorieRing, MACRO_COLORS, MacroBars } from "@/components/charts";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import {
+  BarcodeIcon,
   CameraIcon,
   ChevronRightIcon,
+  DropletIcon,
   DumbbellIcon,
+  MinusIcon,
   PlusIcon,
   ScaleIcon,
   SettingsIcon,
+  SparkIcon,
 } from "@/components/icons";
 import { weight } from "@/lib/format";
 
@@ -40,14 +44,14 @@ interface QuickAction {
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { href: "/food?capture=1", label: "Snap a meal", Icon: CameraIcon, accent: true },
-  { href: "/food", label: "Add food", Icon: PlusIcon },
+  { href: "/food?describe=1", label: "Describe", Icon: SparkIcon, accent: true },
+  { href: "/food?capture=1", label: "Photo", Icon: CameraIcon, accent: true },
+  { href: "/food?scan=1", label: "Scan", Icon: BarcodeIcon },
   { href: "/train", label: "Train", Icon: DumbbellIcon },
-  { href: "/progress?weigh=1", label: "Weigh in", Icon: ScaleIcon },
 ];
 
 function Today() {
-  const { data, targets, coach, currentWeightKg } = useApp();
+  const { data, targets, coach, currentWeightKg, logWater } = useApp();
   const today = toDateKey();
   const profile = data.profile!;
 
@@ -81,6 +85,7 @@ function Today() {
   }, [data.entries]);
 
   const trainedToday = data.sessions.some((s) => s.date === today && s.endedAt);
+  const waterMl = data.water[today] ?? 0;
 
   return (
     <div>
@@ -170,6 +175,12 @@ function Today() {
             </p>
           )}
         </Card>
+
+        <WaterCard
+          consumed={waterMl}
+          target={targets.waterMl}
+          onAdd={(ml) => logWater(today, ml)}
+        />
 
         <div className="grid grid-cols-4 gap-2">
           {QUICK_ACTIONS.map(({ href, label, Icon, accent }) => (
@@ -294,6 +305,64 @@ function Today() {
     </div>
   );
 }
+
+/** Hydration. The target was already computed; this is where it gets used. */
+const WaterCard = ({
+  consumed,
+  target,
+  onAdd,
+}: {
+  consumed: number;
+  target: number;
+  onAdd: (ml: number) => void;
+}) => {
+  const glasses = Math.round(target / 250);
+  const filled = Math.floor(consumed / 250);
+  return (
+    <Card>
+      <div className="flex items-baseline justify-between">
+        <span className="flex items-center gap-2 text-sm text-muted">
+          <DropletIcon className="h-4 w-4" />
+          Water
+        </span>
+        <span className="tabular text-sm">
+          <span className="font-semibold">{(consumed / 1000).toFixed(1)}</span>
+          <span className="text-faint"> / {(target / 1000).toFixed(1)} L</span>
+        </span>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <div className="flex flex-1 flex-wrap gap-1" aria-hidden="true">
+          {Array.from({ length: Math.min(glasses, 12) }, (_, i) => (
+            <span
+              key={i}
+              className={`h-6 w-3.5 rounded-sm border transition-colors ${
+                i < filled ? "border-carbs bg-carbs" : "border-border bg-surface-2"
+              }`}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => onAdd(-250)}
+          disabled={consumed <= 0}
+          aria-label="Remove a glass of water"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted disabled:opacity-30"
+        >
+          <MinusIcon className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onAdd(250)}
+          aria-label="Add a glass of water"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted hover:border-brand hover:text-brand"
+        >
+          <PlusIcon className="h-4 w-4" />
+        </button>
+      </div>
+    </Card>
+  );
+};
 
 export default function HomePage() {
   return (
