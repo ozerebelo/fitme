@@ -244,29 +244,23 @@ environment variable is the whole deployment.
 3. Deploy. Open it on your phone and use *Add to Home Screen* — it installs as a
    standalone app and the workout logger keeps working offline.
 
-### If the deploy builds but every page is `404: NOT_FOUND`
+### If a page is `404: NOT_FOUND`
 
-This is the *same* misconfiguration as the error above, one step further along.
-`apps/web/public` exists (it holds the icons and the manifest), so once the Root
-Directory is `apps/web`, a build with the framework preset still set to **Other**
-stops failing and starts succeeding — by publishing that icon folder as a static
-site. There is no `index.html` in it, so every route returns Vercel's generic
-404.
+Two things produce that page, and neither is a build failure.
 
-The fix is **Settings → Build and Deployment → Framework Preset → Next.js**, and
-clearing any **Output Directory** override that was set while chasing the first
-error. Redeploy after changing it; Vercel does not rebuild on a settings change
-on its own.
+**A URL from a deployment that failed.** A build that errored has no output
+behind its URL, so opening it serves Vercel's generic 404 — often long after the
+underlying problem was fixed. Check the deployment's status in the dashboard
+before debugging anything: if it is red, the 404 is a symptom, and the build log
+is where the real error is.
 
-One other thing produces an identical page: a **Production Branch** that does not
-exist in the repository. Vercel defaults it to `main`, and if the branch you push
-is named something else, the production domain has no deployment behind it. The
-two are easy to tell apart — open the deployment itself in the Vercel dashboard
-and click its own `…vercel.app` URL:
-
-- that URL 404s too → build output, fix the framework preset;
-- that URL works and only the production domain 404s → **Settings → Git →
-  Production Branch**, set it to the branch you actually push.
+**A Production Branch that does not match the branch you push.** Vercel defaults
+it to `main`. If you push anything else, every build succeeds as a *Preview* and
+the production domain either serves nothing or stays pinned to whatever was last
+promoted. The giveaway is the Deployments list: green "Ready" rows all labelled
+Preview, with the Production badge sitting on an older commit. Fix it under
+**Settings → Git → Production Branch**, and promote the current deployment
+(**⋯ → Promote to Production**) to catch up immediately.
 
 Two notes worth knowing:
 
