@@ -10,10 +10,13 @@ import type {
   WorkoutSession,
 } from "@fitme/core";
 import { DEFAULT_REP_RANGE_POLICY } from "@fitme/core";
+import type { MoneyData } from "@fitme/money";
+import { emptyMoneyData, migrateMoneyData } from "@fitme/money";
 import { idbGet, idbSet } from "./idb";
 
 export const STORAGE_KEY = "app-state";
-export const SCHEMA_VERSION = 1;
+/** 2 added the money document. Older documents gain an empty one on load. */
+export const SCHEMA_VERSION = 2;
 
 /**
  * Synchronous durability journal.
@@ -55,6 +58,15 @@ export interface AppData {
   water: Record<string, number>;
   /** Food ids in most-recently-used order, for search ranking. */
   recentFoodIds: string[];
+  /**
+   * Accounts, transactions, budgets, goals and the portfolio.
+   *
+   * Kept inside the same document as everything else quite deliberately: sync,
+   * export, the debounced write and the durability journal all operate on one
+   * blob with one `updatedAt`, so the money side inherits every one of them
+   * without a second mechanism to keep correct.
+   */
+  money: MoneyData;
   settings: AppSettings;
   updatedAt: string;
 }
@@ -79,6 +91,7 @@ export const emptyData = (): AppData => ({
   memory: [],
   water: {},
   recentFoodIds: [],
+  money: emptyMoneyData(),
   settings: { ...DEFAULT_SETTINGS },
   updatedAt: new Date().toISOString(),
 });
@@ -107,6 +120,7 @@ export const migrate = (raw: unknown): AppData => {
     memory: data.memory ?? [],
     water: data.water ?? {},
     recentFoodIds: data.recentFoodIds ?? [],
+    money: migrateMoneyData(data.money),
     settings: {
       ...DEFAULT_SETTINGS,
       ...(data.settings ?? {}),
@@ -189,7 +203,12 @@ export const parseImport = (json: string): ImportOutcome => {
       return { ok: false, error: "That file does not contain a FitMe backup." };
     }
     const candidate = parsed as Partial<AppData>;
-    if (!("entries" in candidate) && !("sessions" in candidate) && !("profile" in candidate)) {
+    if (
+      !("entries" in candidate) &&
+      !("sessions" in candidate) &&
+      !("profile" in candidate) &&
+      !("money" in candidate)
+    ) {
       return { ok: false, error: "That file does not look like a FitMe backup." };
     }
     return { ok: true, data: migrate(candidate) };

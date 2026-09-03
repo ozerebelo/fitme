@@ -1,0 +1,24 @@
+{
+  "name": "@fitme/money",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Domain layer for the money side: balances and net worth, budgets, savings goals, portfolio valuation and returns, recurring schedules, bank-statement import and the money insight engine. Consumed as TypeScript source by the app (see transpilePackages), so it has no build step of its own.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fitme/core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

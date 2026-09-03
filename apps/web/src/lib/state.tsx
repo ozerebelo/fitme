@@ -34,6 +34,7 @@ import {
   toDateKey,
   weightTrend,
 } from "@fitme/core";
+import type { MoneyData } from "@fitme/money";
 import {
   type AppData,
   type AppSettings,
@@ -99,6 +100,16 @@ interface AppState {
 
   setProgram: (program: Program | null) => void;
   regenerateProgram: () => void;
+
+  /**
+   * Apply a change to the money document.
+   *
+   * One entry point rather than thirty actions on this provider: the money
+   * side has its own vocabulary, and `useMoney` in `lib/money.tsx` builds it on
+   * top of this. Everything else — the timestamp, the debounced write, the
+   * journal, sync — happens here exactly as it does for a logged set.
+   */
+  updateMoney: (updater: (money: MoneyData) => MoneyData) => void;
 
   replaceAll: (data: AppData) => void;
 
@@ -468,6 +479,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     );
   }, [patch]);
 
+  const updateMoney = useCallback(
+    (updater: (money: MoneyData) => MoneyData) => {
+      patch((current) => ({ ...current, money: updater(current.money) }));
+    },
+    [patch],
+  );
+
   const runSync = useCallback(async (): Promise<SyncStatus> => {
     // Deliberately not re-stamped: a device that has only opened the app must
     // not out-rank one that has actually logged something.
@@ -737,6 +755,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       importSessions,
       setProgram,
       regenerateProgram,
+      updateMoney,
       replaceAll,
       sync,
       account,
@@ -751,7 +770,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       setProfile, updateSettings, addEntries, updateEntry, removeEntry, addCustomFood,
       rememberFacts, updateFact, forgetFact, markFactsUsed, logWater,
       logWeight, removeMetric, saveSession, removeSession, importSessions, setProgram,
-      regenerateProgram, replaceAll, sync, account, signIn, signUp, signOut, syncNow, resolveSyncChoice,
+      regenerateProgram, updateMoney, replaceAll, sync, account, signIn, signUp, signOut, syncNow,
+      resolveSyncChoice,
     ],
   );
 

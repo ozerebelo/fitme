@@ -1,7 +1,7 @@
 # FitMe
 
-Training and nutrition in one app, with a coach that reads your actual data
-rather than handing you population averages.
+Training, nutrition and money in one app, with a coach on each side that reads
+your actual data rather than handing you population averages.
 
 Works on phone and desktop from one codebase — it is an installable PWA, so it
 adds to your home screen and the workout logger keeps working in a gym with no
@@ -35,6 +35,29 @@ signal.
   back the routines you were already running, same exercises and set counts
 - Bodyweight log with a trend line, editable entry by entry
 
+**Money**
+- Accounts of every kind — current, savings, cash, cards, brokers, a mortgage,
+  a flat — with balances, net worth and its history
+- **Daily spending in one line** — `almoço 12,50 no continente` is parsed on the
+  device, in Portuguese or English, into an amount, a date, a payee and a category
+- **Receipt photos** — photograph the till receipt and Claude reads the merchant,
+  the date, the total and every line item; the shopping is itemised, not one total
+- **Bank statement import** — any CSV, with the columns, the date order and the
+  decimal comma worked out from the file; re-importing the same statement adds
+  nothing the second time
+- **Rules that learn** — a shipped list of Portuguese merchants categorises most
+  of a statement on import, and filing something yourself teaches the rule that
+  files the next one
+- **Budgets with pace**, not just totals: what is left, what that is per day, and
+  where the month finishes at the current rate — with rollover for the irregular
+  envelopes
+- **Savings goals** that say what it takes a month and when they actually land
+- **Investments** — FIFO cost basis, realised and unrealised gains, dividends,
+  and the money-weighted return (XIRR) that accounts for *when* you bought
+- Standing payments, a 30-day cash-flow forecast and the day the account is
+  thinnest
+- Multi-currency, with rates you enter and can see the age of
+
 **The coach**
 - **Adaptive TDEE** — back-calculates your real maintenance calories from what
   you ate and what your weight did, and replaces the formula estimate with it
@@ -43,6 +66,12 @@ signal.
 - Trainer findings: weekly sets per muscle against volume landmarks, stalled
   lifts, RPE creep, push/pull imbalance
 - Ask-anything Q&A grounded in your own logged numbers
+
+**The money side's findings** — the same engine, the same rules: a payment that
+will not clear, a category running over, spending well above its own recent
+normal, the savings rate, months of cover, card utilisation, standing payments
+you had forgotten, a goal that will not make its date, a concentrated position,
+prices that have gone stale.
 
 Everything is stored locally on the device. Nothing is uploaded except a
 downscaled meal photo when you use photo logging, and your question when you ask
@@ -57,7 +86,7 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-The app is fully usable with no configuration. Two features call the Anthropic
+The app is fully usable with no configuration. Four features call the Anthropic
 API and need a key:
 
 ```bash
@@ -65,42 +94,50 @@ API and need a key:
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Without it, photo logging and coach Q&A show a clear message and everything
-else — including all the coaching insights, which are computed locally — carries
-on working.
+Without it, photo logging, receipt reading and coach Q&A show a clear message and
+everything else — including every insight on both sides, which are computed
+locally — carries on working.
 
 ### What actually costs money
 
-Most of the app never touches a model. Only three routes do, and only one of
-them is on a path you use every day:
+Most of the app never touches a model. Only four routes do, and only one of them
+is on a path you use every day:
 
 | Feature | Runs where | Needs a key |
 | --- | --- | --- |
 | Search, barcode scan, manual entry | Device | No |
 | Typed meals — *"dois ovos com torrada e café"* | Device | No |
+| Typed spending — *"almoço 12,50 no continente"* | Device | No |
 | Coaching insights, adaptive TDEE, progressive overload | Device | No |
+| Balances, budgets, portfolio returns, money findings | Device | No |
+| Statement import and auto-categorisation | Device | No |
 | Strong import, routines, charts, sync | Device | No |
 | Typed meals the on-device parser cannot resolve | `api/chat/log` | Yes |
 | Photo logging | `api/vision/meal` | Yes |
+| Receipt photos | `api/vision/receipt` | Yes |
 | Coach Q&A | `api/coach` | Yes |
 
 Typed logging is the interesting one. `parse.ts` in `@fitme/core` reads a
 sentence — in English or Portuguese — into quantities, measures and food names,
 and grounds them against the catalog on the device. It only falls through to the
 model for what it could not resolve, so an ordinary day of logging costs
-nothing, works on the Tube, and returns instantly.
+nothing, works on the Tube, and returns instantly. The money side's `quickadd.ts`
+does the same job for spending and never falls through at all: an amount, a
+date, a payee and a category out of one typed line, entirely on the device.
 
-Photo logging and coach Q&A cannot be made free the same way. Reading a plate
-off a photograph and answering a question about four years of training history
-are both jobs for a hosted model; there is no on-device substitute worth
-shipping. If you do not set a key, both say so plainly and the rest of the app
-is unaffected.
+Photo logging, receipt reading and coach Q&A cannot be made free the same way.
+Reading a plate off a photograph, transcribing a crumpled thermal print and
+answering a question about four years of training history are all jobs for a
+hosted model; there is no on-device substitute worth shipping. If you do not set
+a key, each says so plainly and the rest of the app is unaffected — a purchase
+can still be typed, itemised by hand, or imported from the statement.
 
 Each route reads its model from an environment variable, so you can trade cost
 against quality per feature without touching code:
 
 ```bash
 FITME_VISION_MODEL=claude-opus-5      # photo logging
+FITME_RECEIPT_MODEL=claude-opus-5     # receipt photos (falls back to the above)
 FITME_PARSE_MODEL=claude-opus-5       # typed meals the device could not parse
 FITME_COACH_MODEL=claude-opus-5       # coach Q&A
 FITME_PARSE_EFFORT=low                # low | medium | high
@@ -129,8 +166,14 @@ mean by it: `frango` is a chicken breast and `coxa de frango` is a thigh;
 `chocolate` is milk chocolate and `chocolate negro` is dark. All of the
 vocabulary lives in `packages/core/src/pt.ts`, in one reviewable list.
 
-The three model-backed routes are told to answer in whichever language you
-wrote in.
+The money side is bilingual on input in the same way. Every category carries a
+Portuguese name as well as an English one, so `supermercado` and `restaurantes`
+resolve locally; the quick-add line reads `almoço 12,50 no continente`, `ontem`
+and `anteontem`; the statement importer knows what `Data valor`, `Descrição`,
+`Débito` and `Crédito` mean, and the shipped merchant list is a Portuguese one —
+Continente, Pingo Doce, EDP, MEO, Galp, Via Verde, CP, farmácias, portagens.
+
+The model-backed routes are told to answer in whichever language you wrote in.
 
 ```bash
 npm run check        # typecheck + tests + production build
@@ -156,16 +199,39 @@ packages/core        @fitme/core — the domain layer, pure TypeScript, no deps
   importers/strong   Strong CSV import
   data/              seed food and exercise catalogs
 
+packages/money       @fitme/money — the money domain, pure TypeScript
+  money.ts           minor-unit arithmetic, parsing, formatting, conversion
+  period.ts          months, and the budgeting period that may not be one
+  accounts.ts        balances, net worth and its history
+  transactions.ts    the ledger, transfers, filters and totals
+  budget.ts          envelopes, rollover, pace, projection, first-budget maths
+  goals.ts           savings goals, runway, compound projection
+  invest.ts          FIFO lots, valuation, XIRR, portfolio series
+  recurring.ts       schedules, forecasting, subscription detection
+  rules.ts           payee → category matching and learning
+  quickadd.ts        one typed line into a transaction, EN and PT
+  insights.ts        the money rule engine
+  importers/csv      bank statement import
+  data/              seed categories and merchant patterns
+
 apps/web             Next.js App Router PWA
   src/lib/store.ts   local-first persistence
-  src/components/    UI, charts, logger, food sheets
+  src/lib/money.tsx  the money side's view of that state
+  src/components/    UI, charts, logger, food sheets, money sheets
+  src/app/money/     accounts, spending, budget, invest, plan
   src/app/api/       Claude vision and coach endpoints
 ```
 
-`@fitme/core` is consumed as TypeScript source (`transpilePackages`), so there is
-no build step to keep in sync. It has no dependency on React or the browser,
-which keeps the science testable in isolation and leaves the door open for a
-native client later.
+`@fitme/core` and `@fitme/money` are consumed as TypeScript source
+(`transpilePackages`), so there is no build step to keep in sync. Neither has a
+dependency on React or the browser, which keeps the science and the arithmetic
+testable in isolation and leaves the door open for a native client later.
+
+The two halves share one state document, one IndexedDB write, one journal and
+one sync — which is what lets the money side inherit offline support, backup and
+cross-device sync without inventing a second mechanism. They do not share a
+navigation bar: each section has its own five tabs and a door into the other,
+because six tabs on a phone is how you mis-tap.
 
 ---
 
@@ -217,6 +283,56 @@ are still estimates.
 
 **Insights show their working.** Every finding carries the numbers it came from,
 behind a "show the numbers" toggle. A coach you cannot interrogate is a horoscope.
+
+**Money is an integer.** Every amount in `@fitme/money` is a whole number of
+minor units — cents, pence — and the only decimal in the system lives in
+`parseAmount` and `formatMoney` at the edges. `0.1 + 0.2` is the oldest bug in
+finance software, and a budget that is a cent out every month is a budget nobody
+trusts. Parsing is per-string rather than per-locale, because `12,50` and
+`1,234.56` both turn up in the same imported file and the digits themselves say
+which convention is in play.
+
+**A balance is what you hold.** One sign convention runs through the whole
+package: positive is yours, negative is owed. A card you owe €400 on is −400 and
+a mortgage is minus the principal, so net worth is a sum rather than a case
+analysis — and assets and liabilities are split on the sign of the balance, not
+on the kind of account, because a current account €200 overdrawn is a liability
+that week and an overpaid mortgage is an asset.
+
+**Budgets need pace, not totals.** "€180 of €400 spent" is a fact and not a
+decision: on the 5th it is a problem and on the 25th it is fine. So every
+envelope carries where even spending would have you today, where the month
+finishes at the current rate, and what is left per remaining day — which is the
+number you can act on at the till. Rollover is per envelope, because carrying
+what you did not spend is right for clothes and the car and wrong for rent,
+where the limit is the bill.
+
+**Importing is detection plus a preview.** Portuguese banks export a preamble of
+account details above the header, dates as `12-03-2026`, amounts as `1.234,56`,
+and split the amount into separate debit and credit columns as often as not, so
+a per-bank adapter list would rot within a year. Instead the columns are found
+from the header row, the day-first-or-month-first question is settled from the
+column as a whole rather than from any one date, and the result is shown before
+anything is saved. Every row is keyed by a hash of the account, date, amount and
+payee, so **importing an overlapping statement twice adds nothing** — with an
+occurrence counter, so two identical €1.20 coffees on the same day both survive.
+
+**The rules are one list.** The shipped merchant patterns, the rules learned when
+you recategorise something, and the rules you write by hand are the same
+mechanism and the same editable list — a categoriser you cannot audit files your
+rent as groceries and gives you no way to find out why. Only the ones you taught
+are stored; the seeds stay in code, so the merchant list improves with the app
+instead of being frozen into every document ever created.
+
+**Returns are money-weighted.** A fund up 20% helps very little if you only
+bought in December, so the portfolio's headline return is XIRR across the actual
+cash flows, solved by bisection rather than Newton because irregular personal
+flows produce curves that send Newton to infinity. Cost basis is FIFO, which is
+the rule Portuguese capital-gains reporting uses and the only one that gives a
+defensible realised gain on a partial sale. And prices are *marks you enter*,
+carrying the date they were entered — there is no feed, because an app that has
+to work on a plane cannot have one, and a quote of unknown age dressed up as
+live is worse than an honest "last marked on the 3rd".
 
 **Persistence is belt-and-braces.** The document lives in IndexedDB, written on a
 short debounce. Because that write is asynchronous, a page torn down mid-write —
@@ -351,7 +467,12 @@ order, same set counts, with rep targets from your own range settings.
 
 ## Not built yet
 
-- Accounts and cross-device sync — see "Do you need a database?" above
+- Open banking. There is no PSD2 connection, so bank data arrives as a CSV
+  import. A live connection means a licensed aggregator, a per-account consent
+  flow and a recurring bill, and none of that is built
+- A price feed for the portfolio. Marks are entered by hand and carry their date
+- Multi-currency uses rates you type in. There is no rate feed and no historical
+  rate, so a converted total is priced at today's rate throughout
 - A native wrapper for Apple Health / Health Connect
 - Barcode scanning uses the browser's `BarcodeDetector`, which Safari does not
   implement; on iOS the barcode is typed instead. Bundling a WASM decoder would

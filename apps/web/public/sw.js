@@ -11,8 +11,23 @@
  * prefer the network so a deployed update is picked up on the next online load.
  */
 
-const VERSION = "fitme-v1";
-const SHELL = ["/", "/food", "/train", "/progress", "/coach", "/settings", "/manifest.webmanifest", "/icon.svg"];
+const VERSION = "fitme-v2";
+const SHELL = [
+  "/",
+  "/food",
+  "/train",
+  "/progress",
+  "/coach",
+  "/settings",
+  "/money",
+  "/money/spending",
+  "/money/budget",
+  "/money/invest",
+  "/money/plan",
+  "/money/accounts",
+  "/manifest.webmanifest",
+  "/icon.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

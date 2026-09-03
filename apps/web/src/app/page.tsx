@@ -27,6 +27,7 @@ import {
   SettingsIcon,
   SparkIcon,
 } from "@/components/icons";
+import { MoneyCard } from "@/components/money/MoneyCard";
 import { weight } from "@/lib/format";
 
 const MEAL_LABELS: Record<string, string> = {
@@ -198,6 +199,8 @@ function Today() {
             </Link>
           ))}
         </div>
+
+        <MoneyCard />
 
         {coach.insights.length > 0 && (
           <Link href="/coach" className="block">

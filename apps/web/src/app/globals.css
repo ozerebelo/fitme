@@ -34,6 +34,34 @@
   --color-carbs-soft: #93c5fd;
   --color-fat-soft: #fdba74;
 
+  /*
+   * Money chart marks.
+   *
+   * A second categorical set, stepped for the chart surface (#14171c) rather
+   * than borrowed from the status tokens above, and validated as a set:
+   * OKLCH lightness band, chroma floor, adjacent-pair separation under
+   * deuteranopia/protanopia/tritanopia (worst adjacent ΔE 8.4) and >= 3:1
+   * contrast. Slots are assigned in this fixed order and never cycled — an
+   * eighth series folds into "Other" rather than inventing a hue.
+   */
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+  --color-series-4: #c98500;
+  --color-series-5: #d55181;
+  --color-series-6: #008300;
+  --color-series-7: #9085e9;
+
+  /*
+   * Money in and money out. A polarity pair, not the status greens and reds:
+   * those sit above the lightness band, and green against red is the one pair
+   * that collapses under deuteranopia (ΔE 7.9). Green against this orange
+   * clears every gate (ΔE 9.4) and still reads as in and out. Both series are
+   * always labelled anyway — colour is never the only thing carrying identity.
+   */
+  --color-in: #199e70;
+  --color-out: #d95926;
+
   --color-danger: #f87171;
   --color-warn: #fbbf24;
   --color-ok: #4ade80;

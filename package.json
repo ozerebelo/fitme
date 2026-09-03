@@ -2,7 +2,7 @@
   "name": "fitme",
   "private": true,
   "version": "0.1.0",
-  "description": "FitMe — an offline-first fitness & nutrition platform with a built-in personal trainer and nutritionist.",
+  "description": "FitMe — an offline-first fitness, nutrition and personal-finance platform with a built-in trainer, nutritionist and money coach.",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -14,7 +14,7 @@
     "dev": "npm run dev --workspace=@fitme/web",
     "build": "npm run build --workspace=@fitme/web",
     "start": "npm run start --workspace=@fitme/web",
-    "test": "npm run test --workspace=@fitme/core",
+    "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check": "npm run typecheck && npm run test && npm run build"
   },

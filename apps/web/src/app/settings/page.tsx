@@ -393,9 +393,10 @@ function Settings() {
           <h2 className="font-semibold">Your data</h2>
           <p className="mt-1.5 text-sm leading-relaxed text-muted">
             {data.entries.length} food entries · {data.sessions.length} sessions ·{" "}
-            {data.metrics.length} weigh-ins · {data.memory.length} remembered facts, all
-            stored locally in this browser. Back it up before switching device or clearing
-            site data.
+            {data.metrics.length} weigh-ins · {data.memory.length} remembered facts ·{" "}
+            {data.money.transactions.length} transactions · {data.money.accounts.length}{" "}
+            accounts, all stored locally in this browser. The export below carries the
+            money side too. Back it up before switching device or clearing site data.
           </p>
 
           <input

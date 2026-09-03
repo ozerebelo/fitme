@@ -218,7 +218,8 @@ const ChoiceCard = ({
   >
     <span className="block font-medium">{title}</span>
     <span className="tabular mt-1 block text-sm text-muted">
-      {summary.entries} food entries · {summary.sessions} workouts · {summary.metrics} weigh-ins
+      {summary.entries} food entries · {summary.sessions} workouts · {summary.metrics}{" "}
+      weigh-ins · {summary.transactions} transactions
     </span>
     <span className="mt-0.5 block text-xs text-faint">
       {summary.updatedAt

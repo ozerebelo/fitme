@@ -100,6 +100,7 @@ export interface DataSummary {
   entries: number;
   sessions: number;
   metrics: number;
+  transactions: number;
   updatedAt: string | null;
 }
 
@@ -108,6 +109,7 @@ export const summarise = (data: AppData | null): DataSummary => ({
   entries: data?.entries?.length ?? 0,
   sessions: data?.sessions?.length ?? 0,
   metrics: data?.metrics?.length ?? 0,
+  transactions: data?.money?.transactions?.length ?? 0,
   updatedAt: data?.updatedAt ?? null,
 });
 
@@ -121,6 +123,7 @@ export const summarise = (data: AppData | null): DataSummary => ({
 export const hasRealData = (data: AppData): boolean =>
   (data.entries?.length ?? 0) > 0 ||
   (data.sessions?.length ?? 0) > 0 ||
+  (data.money?.transactions?.length ?? 0) > 0 ||
   (data.metrics?.length ?? 0) > 1;
 
 interface RemoteDocument {
