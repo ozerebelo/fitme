@@ -5,20 +5,20 @@ import { toDateKey } from "@fitme/core";
 import type { Account, Cents } from "@fitme/money";
 import { CURRENCIES, LIABILITY_KINDS, formatPct, unratedCurrencies, utilisation } from "@fitme/money";
 import { useMoney } from "@/lib/money";
-import {
-  Button,
-  Card,
-  EmptyState,
-  Field,
-  PageHeader,
-  SectionTitle,
-  Select,
-  Spinner,
-  TextInput,
-} from "@/components/ui";
+import { Button, Field, Select, Spinner, TextInput } from "@/components/ui";
 import { PlusIcon } from "@/components/icons";
 import { Money, useMoneyFormat } from "@/components/money/format";
 import { AmountField } from "@/components/money/fields";
+import {
+  Empty,
+  HeaderButton,
+  Label,
+  MoneyHeader,
+  Note,
+  Panel,
+  Row,
+  Rows,
+} from "@/components/money/ui";
 import { AccountSheet } from "@/components/money/AccountSheet";
 
 /**
@@ -39,9 +39,9 @@ export default function AccountsPage() {
   const unrated = useMemo(
     () =>
       unratedCurrencies(
-        money.accounts.map((account) => account.currency).concat(
-          money.money.holdings.map((holding) => holding.currency),
-        ),
+        money.accounts
+          .map((account) => account.currency)
+          .concat(money.money.holdings.map((holding) => holding.currency)),
         money.settings,
       ),
     [money.accounts, money.money.holdings, money.settings],
@@ -54,194 +54,183 @@ export default function AccountsPage() {
 
   return (
     <div>
-      <PageHeader
+      <MoneyHeader
         title="Accounts"
-        subtitle={`${format.money(money.worth.total, { round: true })} net worth`}
+        meta={`${format.money(money.worth.total, { round: true })} net worth`}
         action={
-          <button
-            type="button"
-            aria-label="Add an account"
+          <HeaderButton
+            label="Add an account"
+            accent
             onClick={() => {
               setEditing(null);
               setSheet(true);
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-black"
           >
-            <PlusIcon className="h-5 w-5" />
-          </button>
+            <PlusIcon className="h-[18px] w-[18px]" />
+          </HeaderButton>
         }
       />
 
-      <div className="space-y-4 px-4">
+      <div className="space-y-3 px-4">
         {open.length === 0 ? (
-          <EmptyState
+          <Empty
             title="No accounts yet"
             detail="Everything else hangs off an account: transactions, budgets, goals and the portfolio."
             action={
-              <Button variant="primary" onClick={() => setSheet(true)}>
+              <Button variant="primary" size="sm" onClick={() => setSheet(true)}>
                 Add one
               </Button>
             }
           />
         ) : (
-          <Card className="p-0">
-            <ul className="divide-y divide-border">
-              {open.map(({ account, balance, base }) => {
-                const used = utilisation(account, balance);
-                return (
-                  <li key={account.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditing(account);
-                        setSheet(true);
-                      }}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{account.name}</div>
-                        <div className="truncate text-xs text-faint">
-                          {[
-                            account.institution,
-                            account.kind,
-                            account.currency !== money.currency ? account.currency : null,
-                            used != null ? `${formatPct(used)} of limit` : null,
-                            account.balanceMode === "manual"
-                              ? `valued ${account.valuations[account.valuations.length - 1]?.date ?? account.openedOn}`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <Money
-                          cents={balance}
-                          currency={account.currency}
-                          round
-                          className={
-                            LIABILITY_KINDS.has(account.kind) || balance < 0 ? "text-danger" : ""
-                          }
-                        />
-                        {account.currency !== money.currency && (
-                          <span className="block text-xs text-faint">
-                            {format.money(base, { round: true })}
-                          </span>
-                        )}
-                      </div>
-                    </button>
+          <Rows>
+            {open.map(({ account, balance, base }) => {
+              const used = utilisation(account, balance);
+              const isValuing = valuing?.id === account.id;
+              return (
+                <li key={account.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(account);
+                      setSheet(true);
+                    }}
+                    className="flex min-h-[44px] w-full items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors hover:bg-surface-2"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium leading-tight">
+                        {account.name}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] leading-tight text-faint">
+                        {[
+                          account.institution,
+                          account.kind,
+                          account.currency !== money.currency ? account.currency : null,
+                          used != null ? `${formatPct(used)} of limit` : null,
+                          account.balanceMode === "manual"
+                            ? `valued ${account.valuations[account.valuations.length - 1]?.date ?? account.openedOn}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <Money
+                        cents={balance}
+                        currency={account.currency}
+                        trim
+                        className={
+                          LIABILITY_KINDS.has(account.kind) || balance < 0 ? "text-danger" : ""
+                        }
+                      />
+                      {account.currency !== money.currency && (
+                        <span className="mt-0.5 block text-[11px] text-faint">
+                          {format.money(base, { round: true })}
+                        </span>
+                      )}
+                    </span>
+                  </button>
 
-                    {account.balanceMode === "manual" && (
-                      <div className="flex items-end gap-2 px-4 pb-3">
-                        {valuing?.id === account.id ? (
-                          <>
-                            <div className="flex-1">
-                              <AmountField
-                                value={newValue}
-                                currency={account.currency}
-                                onChange={setNewValue}
-                                autoFocus
-                              />
-                            </div>
-                            <Button
-                              onClick={() => {
-                                if (newValue != null) {
-                                  money.setValuation(account.id, toDateKey(), newValue);
-                                }
-                                setValuing(null);
-                                setNewValue(null);
-                              }}
-                            >
-                              Save
-                            </Button>
-                          </>
-                        ) : (
+                  {account.balanceMode === "manual" && (
+                    <div className="flex items-end gap-2 px-3.5 pb-2.5">
+                      {isValuing ? (
+                        <>
+                          <div className="flex-1">
+                            <AmountField
+                              value={newValue}
+                              currency={account.currency}
+                              onChange={setNewValue}
+                              autoFocus
+                            />
+                          </div>
                           <Button
                             size="sm"
                             onClick={() => {
-                              setValuing(account);
-                              setNewValue(balance);
+                              if (newValue != null) {
+                                money.setValuation(account.id, toDateKey(), newValue);
+                              }
+                              setValuing(null);
+                              setNewValue(null);
                             }}
                           >
-                            Update its value
+                            Save
                           </Button>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setValuing(account);
+                            setNewValue(balance);
+                          }}
+                        >
+                          Update its value
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </Rows>
         )}
 
         {archived.length > 0 && (
           <div>
-            <SectionTitle>Archived</SectionTitle>
-            <Card className="p-0">
-              <ul className="divide-y divide-border">
-                {archived.map(({ account, balance }) => (
-                  <li key={account.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditing(account);
-                        setSheet(true);
-                      }}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-muted transition-colors hover:bg-surface-2"
-                    >
-                      <span className="truncate">{account.name}</span>
-                      <Money cents={balance} currency={account.currency} tone="muted" round />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </Card>
+            <Label>Archived</Label>
+            <Rows>
+              {archived.map(({ account, balance }) => (
+                <Row
+                  key={account.id}
+                  onClick={() => {
+                    setEditing(account);
+                    setSheet(true);
+                  }}
+                  primary={account.name}
+                  value={
+                    <Money cents={balance} currency={account.currency} tone="muted" round />
+                  }
+                />
+              ))}
+            </Rows>
           </div>
         )}
 
         {unrated.length > 0 && (
           <div>
-            <SectionTitle>Exchange rates</SectionTitle>
-            <Card>
-              <p className="text-sm leading-relaxed text-muted">
+            <Label>Exchange rates</Label>
+            <Panel className="space-y-3">
+              <Note>
                 {unrated.join(", ")} {unrated.length === 1 ? "has" : "have"} no rate on file, so
                 {unrated.length === 1 ? " it is" : " they are"} counted into the totals at face
                 value. Set a rate and the totals become true.
-              </p>
-              <div className="mt-3 space-y-3">
-                {unrated.map((code) => (
-                  <RateRow key={code} code={code} />
-                ))}
-              </div>
-            </Card>
+              </Note>
+              {unrated.map((code) => (
+                <RateRow key={code} code={code} />
+              ))}
+            </Panel>
           </div>
         )}
 
         {Object.keys(money.settings.rates).length > 0 && (
           <div>
-            <SectionTitle>Rates on file</SectionTitle>
-            <Card className="p-0">
-              <ul className="divide-y divide-border">
-                {Object.entries(money.settings.rates).map(([code, entry]) => (
-                  <li
-                    key={code}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  >
-                    <span>
-                      1 {code} = {entry.rate} {money.currency}
-                    </span>
-                    <span className="text-xs text-faint">set {entry.asOf}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
+            <Label>Rates on file</Label>
+            <Rows>
+              {Object.entries(money.settings.rates).map(([code, entry]) => (
+                <Row
+                  key={code}
+                  primary={`1 ${code} = ${entry.rate} ${money.currency}`}
+                  value={<span className="text-[11px] text-faint">set {entry.asOf}</span>}
+                />
+              ))}
+            </Rows>
           </div>
         )}
 
         <div>
-          <SectionTitle>Preferences</SectionTitle>
-          <Card className="space-y-4">
+          <Label>Preferences</Label>
+          <Panel className="space-y-4">
             <Field
               label="Currency everything is totalled in"
               hint="Accounts keep their own currency; this is what the totals are shown in."
@@ -338,7 +327,7 @@ export default function AccountsPage() {
                 </span>
               </span>
             </label>
-          </Card>
+          </Panel>
         </div>
       </div>
 

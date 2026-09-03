@@ -35,16 +35,16 @@ export const MoneyCard = () => {
                   <span className="text-xs font-semibold uppercase tracking-wider text-faint">
                     Money
                   </span>
-                  <span className="tabular text-sm font-medium">
+                  <span className="tabular text-[13px] font-medium">
                     {format.money(money.worth.total, { round: true })}
                   </span>
                 </div>
-                <p className="mt-0.5 truncate text-sm text-muted">{money.report.headline}</p>
+                <p className="mt-0.5 truncate text-[12px] text-muted">{money.report.headline}</p>
               </>
             ) : (
               <>
                 <p className="font-medium">Money</p>
-                <p className="truncate text-sm text-muted">
+                <p className="truncate text-[12px] text-muted">
                   Accounts, spending, budgets and investments — set it up once.
                 </p>
               </>

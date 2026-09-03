@@ -14,19 +14,22 @@ import {
   shortMonthLabel,
 } from "@fitme/money";
 import { useMoney } from "@/lib/money";
-import {
-  Button,
-  Card,
-  EmptyState,
-  Field,
-  PageHeader,
-  SectionTitle,
-  Spinner,
-} from "@/components/ui";
+import { Button, Field, Spinner } from "@/components/ui";
 import { PlusIcon } from "@/components/icons";
-import { CompareChart, Donut, SERIES_COLORS, StatRow } from "@/components/money/charts";
+import { CompareChart, Donut, SERIES_COLORS } from "@/components/money/charts";
 import { Money, useMoneyFormat } from "@/components/money/format";
 import { AmountField } from "@/components/money/fields";
+import {
+  Empty,
+  Figures,
+  HeaderButton,
+  Hero,
+  Label,
+  MoneyHeader,
+  Panel,
+  Row,
+  Rows,
+} from "@/components/money/ui";
 import { AccountSheet } from "@/components/money/AccountSheet";
 import { HoldingSheet } from "@/components/money/HoldingSheet";
 
@@ -71,13 +74,7 @@ export default function InvestPage() {
   }, [money.money.holdings, money.money.trades, money.money.transactions, money.settings, month, asOf, format.locale]);
 
   const projection = useMemo(
-    () =>
-      projectBalance(
-        portfolio.value,
-        monthly ?? 0,
-        money.settings.expectedReturnPct,
-        120,
-      ),
+    () => projectBalance(portfolio.value, monthly ?? 0, money.settings.expectedReturnPct, 120),
     [portfolio.value, monthly, money.settings.expectedReturnPct],
   );
 
@@ -86,35 +83,37 @@ export default function InvestPage() {
   const hasInvestmentAccount = money.openAccounts.some(
     (account) => account.kind === "investment",
   );
-  const inTenYears = projection[projection.length - 1];
+  const horizons = [
+    { years: 5, point: projection[59] },
+    { years: 10, point: projection[119] },
+  ];
 
   return (
     <div>
-      <PageHeader
+      <MoneyHeader
         title="Invest"
-        subtitle={
+        meta={
           portfolio.oldestMark
             ? `Marked as of ${portfolio.oldestMark}`
             : "Manual marks, no price feed"
         }
         action={
-          <button
-            type="button"
-            aria-label="Add a holding"
+          <HeaderButton
+            label="Add a holding"
+            accent
             onClick={() => {
               setEditing(null);
               setSheet(hasInvestmentAccount ? "holding" : "account");
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-black"
           >
-            <PlusIcon className="h-5 w-5" />
-          </button>
+            <PlusIcon className="h-[18px] w-[18px]" />
+          </HeaderButton>
         }
       />
 
-      <div className="space-y-4 px-4">
+      <div className="space-y-3 px-4">
         {money.money.holdings.length === 0 ? (
-          <EmptyState
+          <Empty
             title="Nothing tracked yet"
             detail={
               hasInvestmentAccount
@@ -124,6 +123,7 @@ export default function InvestPage() {
             action={
               <Button
                 variant="primary"
+                size="sm"
                 onClick={() => setSheet(hasInvestmentAccount ? "holding" : "account")}
               >
                 {hasInvestmentAccount ? "Add a holding" : "Add an investment account"}
@@ -132,31 +132,23 @@ export default function InvestPage() {
           />
         ) : (
           <>
-            <Card>
-              <p className="text-xs font-semibold uppercase tracking-wider text-faint">
-                Portfolio
-              </p>
-              <p className="tabular mt-1 text-[32px] font-semibold leading-none">
-                {format.money(portfolio.value, { round: true })}
-              </p>
-              <p className="mt-1.5 text-sm">
-                <Money
-                  cents={portfolio.totalReturn}
-                  tone="auto"
-                  signed
-                  round
-                />
-                <span className="text-faint">
-                  {portfolio.returnPct != null
-                    ? ` · ${formatSignedPct(portfolio.returnPct)} on what went in`
-                    : ""}
-                </span>
-              </p>
+            <Panel>
+              <Hero
+                label="Portfolio"
+                value={format.money(portfolio.value, { round: true })}
+                delta={
+                  portfolio.returnPct != null
+                    ? `${format.money(portfolio.totalReturn, { signed: true, round: true })} · ${formatSignedPct(portfolio.returnPct)}`
+                    : format.money(portfolio.totalReturn, { signed: true, round: true })
+                }
+                deltaTone={portfolio.totalReturn >= 0 ? "up" : "down"}
+              />
 
               {series.length > 1 && (
-                <div className="mt-4">
+                <div className="mt-3">
                   <CompareChart
                     points={series}
+                    height={140}
                     labelA="Value"
                     labelB="Money in"
                     format={(value) => format.money(Math.round(value * 100), { round: true })}
@@ -164,9 +156,9 @@ export default function InvestPage() {
                 </div>
               )}
 
-              <div className="mt-4 border-t border-border pt-4">
-                <StatRow
-                  stats={[
+              <div className="mt-3 border-t border-border pt-3">
+                <Figures
+                  items={[
                     {
                       label: "Annualised",
                       value:
@@ -175,7 +167,7 @@ export default function InvestPage() {
                           : "—",
                       tone:
                         portfolio.annualisedReturn == null
-                          ? "flat"
+                          ? undefined
                           : portfolio.annualisedReturn >= 0
                             ? "up"
                             : "down",
@@ -191,18 +183,19 @@ export default function InvestPage() {
                       value: format.money(portfolio.realised + portfolio.dividends, {
                         round: true,
                       }),
-                      hint: "sales and dividends",
+                      hint: "sales, dividends",
                     },
                   ]}
                 />
               </div>
-            </Card>
+            </Panel>
 
             {portfolio.byKind.length > 1 && (
               <div>
-                <SectionTitle>What it is made of</SectionTitle>
-                <Card>
+                <Label>What it is made of</Label>
+                <Panel>
                   <Donut
+                    size={128}
                     total={portfolio.value}
                     format={(value) => format.money(value, { round: true })}
                     slices={portfolio.byKind.map((slice, index) => ({
@@ -211,66 +204,55 @@ export default function InvestPage() {
                       color: SERIES_COLORS[index % SERIES_COLORS.length]!,
                     }))}
                   />
-                </Card>
+                </Panel>
               </div>
             )}
 
             <div>
-              <SectionTitle>Holdings</SectionTitle>
-              <Card className="p-0">
-                <ul className="divide-y divide-border">
-                  {[...portfolio.holdings]
-                    .sort((a, b) => b.baseValue - a.baseValue)
-                    .map((valuation) => (
-                      <li key={valuation.holding.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditing(valuation.holding);
-                            setSheet("holding");
-                          }}
-                          className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-2"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{valuation.holding.symbol}</span>
-                              <span className="truncate text-xs text-faint">
-                                {valuation.holding.name}
-                              </span>
-                            </div>
-                            <div className="tabular text-xs text-faint">
-                              {valuation.position.quantity} @{" "}
-                              {valuation.mark.price || "—"}
-                              {valuation.mark.date ? ` · ${valuation.mark.date}` : ""}
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <Money
-                              cents={valuation.value}
-                              currency={valuation.holding.currency}
-                              round
-                              className="block"
-                            />
-                            <span
-                              className={`tabular text-xs ${
-                                valuation.unrealised >= 0 ? "text-ok" : "text-danger"
-                              }`}
-                            >
-                              {valuation.returnPct != null
-                                ? formatSignedPct(valuation.returnPct)
-                                : "—"}
-                            </span>
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              </Card>
+              <Label>Holdings</Label>
+              <Rows>
+                {[...portfolio.holdings]
+                  .sort((a, b) => b.baseValue - a.baseValue)
+                  .map((valuation) => (
+                    <Row
+                      key={valuation.holding.id}
+                      onClick={() => {
+                        setEditing(valuation.holding);
+                        setSheet("holding");
+                      }}
+                      primary={
+                        <span className="flex items-baseline gap-1.5">
+                          <span>{valuation.holding.symbol}</span>
+                          <span className="truncate text-[11px] font-normal text-faint">
+                            {valuation.holding.name}
+                          </span>
+                        </span>
+                      }
+                      secondary={`${valuation.position.quantity} @ ${valuation.mark.price || "—"}${
+                        valuation.mark.date ? ` · ${valuation.mark.date}` : ""
+                      }`}
+                      value={
+                        <Money
+                          cents={valuation.value}
+                          currency={valuation.holding.currency}
+                          trim
+                        />
+                      }
+                      aside={
+                        <span className={valuation.unrealised >= 0 ? "text-ok" : "text-danger"}>
+                          {valuation.returnPct != null
+                            ? formatSignedPct(valuation.returnPct)
+                            : "—"}
+                        </span>
+                      }
+                    />
+                  ))}
+              </Rows>
             </div>
 
             <div>
-              <SectionTitle>If this keeps going</SectionTitle>
-              <Card>
+              <Label>If this keeps going</Label>
+              <Panel>
                 <Field
                   label="Adding each month"
                   hint={`Compounded monthly at ${money.settings.expectedReturnPct}% a year — an assumption, not a forecast. Change it in Settings.`}
@@ -283,30 +265,25 @@ export default function InvestPage() {
                   />
                 </Field>
 
-                {inTenYears && (
-                  <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-border pt-4 text-sm">
-                    {[
-                      { years: 5, point: projection[59] },
-                      { years: 10, point: inTenYears },
-                    ].map(({ years, point }) =>
-                      point ? (
-                        <div key={years} className="col-span-3 flex justify-between gap-3">
-                          <dt className="text-faint">In {years} years</dt>
-                          <dd className="tabular text-right">
-                            <span className="font-medium">
-                              {format.money(point.value, { round: true })}
-                            </span>
-                            <span className="block text-xs text-faint">
-                              {format.money(point.contributed, { round: true })} in,{" "}
-                              {format.money(point.growth, { round: true })} growth
-                            </span>
-                          </dd>
-                        </div>
-                      ) : null,
-                    )}
-                  </dl>
-                )}
-              </Card>
+                <dl className="mt-3 space-y-2 border-t border-border pt-3">
+                  {horizons.map(({ years, point }) =>
+                    point ? (
+                      <div key={years} className="flex items-baseline justify-between gap-3">
+                        <dt className="text-[12px] text-faint">In {years} years</dt>
+                        <dd className="tabular text-right">
+                          <span className="text-[13px] font-medium">
+                            {format.money(point.value, { round: true })}
+                          </span>
+                          <span className="block text-[11px] text-faint">
+                            {format.money(point.contributed, { round: true })} in,{" "}
+                            {format.money(point.growth, { round: true })} growth
+                          </span>
+                        </dd>
+                      </div>
+                    ) : null,
+                  )}
+                </dl>
+              </Panel>
             </div>
           </>
         )}

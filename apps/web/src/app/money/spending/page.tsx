@@ -10,31 +10,27 @@ import {
   groupByDate,
   monthLabel,
   periodBounds,
-  periodOf,
   spendingByCategory,
   topPayees,
 } from "@fitme/money";
 import { useMoney } from "@/lib/money";
 import { CategoryBars } from "@/components/money/charts";
-import {
-  Button,
-  Card,
-  Chip,
-  EmptyState,
-  PageHeader,
-  SectionTitle,
-  Spinner,
-  TextInput,
-} from "@/components/ui";
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  PlusIcon,
-  ReceiptIcon,
-  UploadIcon,
-} from "@/components/icons";
+import { Button, Spinner, TextInput } from "@/components/ui";
+import { PlusIcon, ReceiptIcon, UploadIcon } from "@/components/icons";
 import { Money, useMoneyFormat } from "@/components/money/format";
 import { CategorySelect } from "@/components/money/fields";
+import {
+  Empty,
+  FilterChip,
+  HeaderButton,
+  Label,
+  MoneyHeader,
+  Panel,
+  Row,
+  Rows,
+  Stepper,
+  Swatch,
+} from "@/components/money/ui";
 import { TransactionSheet } from "@/components/money/TransactionSheet";
 import { ImportSheet } from "@/components/money/ImportSheet";
 
@@ -93,76 +89,55 @@ function Spending() {
     [visible, money.ledger],
   );
 
-  const payees = useMemo(
-    () => topPayees(visible, money.ledger, 5),
-    [visible, money.ledger],
-  );
+  const payees = useMemo(() => topPayees(visible, money.ledger, 5), [visible, money.ledger]);
 
   if (!money.ready) return <Spinner label="Loading your data" />;
 
   if (money.accounts.length === 0) {
     return (
       <div>
-        <PageHeader title="Spending" />
+        <MoneyHeader title="Spending" />
         <div className="px-4">
-          <EmptyState
+          <Empty
             title="No accounts yet"
             detail="Spending is logged against an account, so add one first."
-            action={<Button variant="primary" onClick={() => setSheet("add")}>Add an account</Button>}
+            action={
+              <Button variant="primary" size="sm" onClick={() => setSheet("add")}>
+                Add an account
+              </Button>
+            }
           />
         </div>
       </div>
     );
   }
 
+  const spentThisMonth = byCategory.reduce((total, row) => total + row.total, 0);
+
   return (
     <div>
-      <PageHeader
+      <MoneyHeader
         title="Spending"
-        subtitle={`${period.start} to ${period.end}`}
+        meta={`${format.money(spentThisMonth, { round: true })} out · ${visible.length} transactions`}
         action={
-          <div className="flex gap-2">
-            <button
-              type="button"
-              aria-label="Import a statement"
-              onClick={() => setSheet("import")}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted hover:text-text"
-            >
-              <UploadIcon className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Add a transaction"
-              onClick={() => setSheet("add")}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-black"
-            >
-              <PlusIcon className="h-5 w-5" />
-            </button>
-          </div>
+          <>
+            <HeaderButton label="Import a statement" onClick={() => setSheet("import")}>
+              <UploadIcon className="h-[18px] w-[18px]" />
+            </HeaderButton>
+            <HeaderButton label="Add a transaction" accent onClick={() => setSheet("add")}>
+              <PlusIcon className="h-[18px] w-[18px]" />
+            </HeaderButton>
+          </>
         }
       />
 
-      <div className="space-y-4 px-4">
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface p-1">
-          <button
-            type="button"
-            aria-label="Previous month"
-            onClick={() => setMonth(addMonths(month, -1))}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2"
-          >
-            <ChevronLeftIcon className="h-5 w-5" />
-          </button>
-          <span className="text-sm font-medium">{monthLabel(month, format.locale)}</span>
-          <button
-            type="button"
-            aria-label="Next month"
-            disabled={isCurrentMonth}
-            onClick={() => setMonth(addMonths(month, 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 disabled:opacity-30"
-          >
-            <ChevronRightIcon className="h-5 w-5" />
-          </button>
-        </div>
+      <div className="space-y-3 px-4">
+        <Stepper
+          label={monthLabel(month, format.locale)}
+          onPrevious={() => setMonth(addMonths(month, -1))}
+          onNext={() => setMonth(addMonths(month, 1))}
+          nextDisabled={isCurrentMonth}
+        />
 
         <div className="space-y-2">
           <TextInput
@@ -170,25 +145,26 @@ function Spending() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search payee, note or item"
             aria-label="Search"
+            className="py-2.5"
           />
-          <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            <Chip
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+            <FilterChip
               selected={onlyUncategorised}
               onClick={() => setOnlyUncategorised((current) => !current)}
             >
-              Uncategorised{uncategorisedCount > 0 ? ` (${uncategorisedCount})` : ""}
-            </Chip>
-            <Chip selected={!accountId} onClick={() => setAccountId("")}>
+              Uncategorised{uncategorisedCount > 0 ? ` ${uncategorisedCount}` : ""}
+            </FilterChip>
+            <FilterChip selected={!accountId} onClick={() => setAccountId("")}>
               All accounts
-            </Chip>
+            </FilterChip>
             {money.openAccounts.map((account) => (
-              <Chip
+              <FilterChip
                 key={account.id}
                 selected={accountId === account.id}
                 onClick={() => setAccountId(accountId === account.id ? "" : account.id)}
               >
                 {account.name}
-              </Chip>
+              </FilterChip>
             ))}
           </div>
           <CategorySelect
@@ -201,7 +177,7 @@ function Spending() {
         </div>
 
         {days.length === 0 ? (
-          <EmptyState
+          <Empty
             title="Nothing here"
             detail={
               query || categoryId || onlyUncategorised
@@ -209,67 +185,64 @@ function Spending() {
                 : "Add one by hand, describe it in a line, photograph a receipt, or import a statement."
             }
             action={
-              <Button variant="primary" onClick={() => setSheet("add")}>
+              <Button variant="primary" size="sm" onClick={() => setSheet("add")}>
                 Add a transaction
               </Button>
             }
           />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {days.map((day) => (
               <div key={day.date}>
-                <div className="flex items-baseline justify-between px-1 pb-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-faint">
-                    {formatDayLabel(day.date, toDateKey())}
-                  </span>
-                  <Money cents={day.net} tone="muted" signed round className="text-xs" />
-                </div>
-                <Card className="p-0">
-                  <ul className="divide-y divide-border">
-                    {day.transactions.map((transaction) => {
-                      const category = transaction.categoryId
-                        ? money.categoryMap.get(transaction.categoryId)
-                        : null;
-                      const account = money.accountMap.get(transaction.accountId);
-                      return (
-                        <li key={transaction.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditing(transaction);
-                              setSheet("edit");
-                            }}
-                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2"
-                          >
-                            <span
-                              className="h-8 w-1 shrink-0 rounded-full"
-                              style={{ background: category?.color ?? "var(--color-border)" }}
-                              aria-hidden="true"
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-1.5">
-                                <span className="truncate font-medium">{transaction.payee}</span>
-                                {transaction.items && transaction.items.length > 0 && (
-                                  <ReceiptIcon className="h-3.5 w-3.5 shrink-0 text-faint" />
-                                )}
-                              </span>
-                              <span className="block truncate text-xs text-faint">
-                                {category?.name ?? (transaction.transferId ? "Transfer" : "Uncategorised")}
-                                {account ? ` · ${account.name}` : ""}
-                              </span>
-                            </span>
-                            <Money
-                              cents={transaction.amount}
-                              currency={account?.currency}
-                              tone={transaction.transferId ? "muted" : "auto"}
-                              signed
-                            />
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </Card>
+                <Label
+                  action={
+                    <Money cents={day.net} tone="muted" signed round className="text-[11px]" />
+                  }
+                >
+                  {formatDayLabel(day.date, toDateKey())}
+                </Label>
+                <Rows>
+                  {day.transactions.map((transaction) => {
+                    const category = transaction.categoryId
+                      ? money.categoryMap.get(transaction.categoryId)
+                      : null;
+                    const account = money.accountMap.get(transaction.accountId);
+                    return (
+                      <Row
+                        key={transaction.id}
+                        onClick={() => {
+                          setEditing(transaction);
+                          setSheet("edit");
+                        }}
+                        leading={<Swatch color={category?.color ?? "var(--color-border)"} />}
+                        primary={
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate">{transaction.payee}</span>
+                            {transaction.items && transaction.items.length > 0 && (
+                              <ReceiptIcon className="h-3 w-3 shrink-0 text-faint" />
+                            )}
+                          </span>
+                        }
+                        secondary={[
+                          category?.name ??
+                            (transaction.transferId ? "Transfer" : "Uncategorised"),
+                          account?.name,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        value={
+                          <Money
+                            cents={transaction.amount}
+                            currency={account?.currency}
+                            tone={transaction.transferId ? "muted" : "auto"}
+                            signed
+                            trim
+                          />
+                        }
+                      />
+                    );
+                  })}
+                </Rows>
               </div>
             ))}
           </div>
@@ -277,8 +250,8 @@ function Spending() {
 
         {byCategory.length > 0 && (
           <div>
-            <SectionTitle>Where it went</SectionTitle>
-            <Card>
+            <Label>Where it went</Label>
+            <Panel>
               <CategoryBars
                 format={(value) => format.money(value, { round: true })}
                 data={byCategory.map((row) => {
@@ -293,31 +266,23 @@ function Spending() {
                   };
                 })}
               />
-            </Card>
+            </Panel>
           </div>
         )}
 
         {payees.length > 0 && (
           <div>
-            <SectionTitle>Most spent with</SectionTitle>
-            <Card className="p-0">
-              <ul className="divide-y divide-border">
-                {payees.map((payee) => (
-                  <li
-                    key={payee.payee}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{payee.payee}</div>
-                      <div className="text-xs text-faint">
-                        {payee.count} transaction{payee.count === 1 ? "" : "s"}
-                      </div>
-                    </div>
-                    <Money cents={payee.total} round />
-                  </li>
-                ))}
-              </ul>
-            </Card>
+            <Label>Most spent with</Label>
+            <Rows>
+              {payees.map((payee) => (
+                <Row
+                  key={payee.payee}
+                  primary={payee.payee}
+                  secondary={`${payee.count} transaction${payee.count === 1 ? "" : "s"}`}
+                  value={<Money cents={payee.total} trim />}
+                />
+              ))}
+            </Rows>
           </div>
         )}
       </div>

@@ -52,6 +52,13 @@ describe("formatMoney", () => {
     expect(formatMoney(123456, "EUR", { locale: "en-GB", round: true })).toContain("1,235");
   });
 
+  it("prints the cents only when there are any", () => {
+    expect(formatMoney(6600, "EUR", { locale: "en-GB", trimZeros: true })).toContain("66");
+    expect(formatMoney(6600, "EUR", { locale: "en-GB", trimZeros: true })).not.toContain(".00");
+    // And never rounds — a ledger row that hides 49 cents is a lie.
+    expect(formatMoney(1349, "EUR", { locale: "en-GB", trimZeros: true })).toContain("13.49");
+  });
+
   it("signs deltas", () => {
     expect(formatMoney(500, "EUR", { locale: "en-GB", signed: true })).toContain("+");
     expect(formatMoney(-500, "EUR", { locale: "en-GB" })).toContain("-");

@@ -3,29 +3,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { toDateKey } from "@fitme/core";
 import type { BudgetStatus, Cents } from "@fitme/money";
-import {
-  addMonths,
-  budgetReport,
-  formatPct,
-  monthLabel,
-  suggestBudget,
-} from "@fitme/money";
+import { addMonths, budgetReport, formatPct, monthLabel, suggestBudget } from "@fitme/money";
 import { useMoney } from "@/lib/money";
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  Field,
-  PageHeader,
-  SectionTitle,
-  Sheet,
-  Spinner,
-} from "@/components/ui";
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
+import { Badge, Button, Field, Sheet, Spinner } from "@/components/ui";
+import { PlusIcon } from "@/components/icons";
 import { BudgetBar } from "@/components/money/charts";
 import { Money, useMoneyFormat } from "@/components/money/format";
 import { AmountField, CategorySelect } from "@/components/money/fields";
+import {
+  Empty,
+  HeaderButton,
+  Hero,
+  Label,
+  MoneyHeader,
+  Note,
+  Panel,
+  Row,
+  Rows,
+  Stepper,
+} from "@/components/money/ui";
 
 /**
  * Envelopes, with the two numbers that make them work: what is left, and what
@@ -68,64 +64,53 @@ export default function BudgetPage() {
 
   if (!money.ready) return <Spinner label="Loading your data" />;
 
+  /**
+   * An empty envelope is always red; "over pace" only starts colouring once the
+   * month has enough of itself behind it. On the 2nd, every envelope with a
+   * standing order in it is technically ahead of pace, and a screen of amber on
+   * day two is a screen people learn to ignore.
+   */
   const overallTone: "over" | "spent" | "neutral" =
     report.totals.spent >= report.totals.available && report.totals.available > 0
       ? "spent"
-      : report.totals.spent > Math.round(report.totals.available * report.progress * 1.08)
+      : report.progress >= 0.15 &&
+          report.totals.spent > Math.round(report.totals.available * report.progress * 1.08)
         ? "over"
         : "neutral";
 
   return (
     <div>
-      <PageHeader
+      <MoneyHeader
         title="Budget"
-        subtitle={
+        meta={
           report.daysLeft > 0
-            ? `${report.daysLeft} day${report.daysLeft === 1 ? "" : "s"} left in this one`
+            ? `${report.daysLeft} day${report.daysLeft === 1 ? "" : "s"} left · ${formatPct(report.progress)} through`
             : "Closed"
         }
         action={
-          <button
-            type="button"
-            aria-label="Budget a category"
-            onClick={() => setAdding(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-black"
-          >
-            <PlusIcon className="h-5 w-5" />
-          </button>
+          <HeaderButton label="Budget a category" accent onClick={() => setAdding(true)}>
+            <PlusIcon className="h-[18px] w-[18px]" />
+          </HeaderButton>
         }
       />
 
-      <div className="space-y-4 px-4">
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface p-1">
-          <button
-            type="button"
-            aria-label="Previous month"
-            onClick={() => setMonth(addMonths(month, -1))}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2"
-          >
-            <ChevronLeftIcon className="h-5 w-5" />
-          </button>
-          <span className="text-sm font-medium">{monthLabel(month, format.locale)}</span>
-          <button
-            type="button"
-            aria-label="Next month"
-            onClick={() => setMonth(addMonths(month, 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2"
-          >
-            <ChevronRightIcon className="h-5 w-5" />
-          </button>
-        </div>
+      <div className="space-y-3 px-4">
+        <Stepper
+          label={monthLabel(month, format.locale)}
+          onPrevious={() => setMonth(addMonths(month, -1))}
+          onNext={() => setMonth(addMonths(month, 1))}
+        />
 
         {money.money.budget.lines.length === 0 ? (
           <>
-            <EmptyState
+            <Empty
               title="No budget yet"
               detail="A budget is a set of limits per category. Start from what you actually spent — it is a far better first guess than a number picked out of the air."
               action={
                 suggestions.length > 0 ? (
                   <Button
                     variant="primary"
+                    size="sm"
                     onClick={() => {
                       for (const suggestion of suggestions) {
                         money.setBudgetLine(suggestion.categoryId, suggestion.limit, false);
@@ -135,56 +120,48 @@ export default function BudgetPage() {
                     Build it from my last 3 months
                   </Button>
                 ) : (
-                  <Button variant="primary" onClick={() => setAdding(true)}>
+                  <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
                     Budget a category
                   </Button>
                 )
               }
             />
             {suggestions.length > 0 && (
-              <Card>
-                <SectionTitle>What that would set</SectionTitle>
-                <ul className="divide-y divide-border">
+              <div>
+                <Label>What that would set</Label>
+                <Rows>
                   {suggestions.map((suggestion) => (
-                    <li
+                    <Row
                       key={suggestion.categoryId}
-                      className="flex items-center justify-between gap-3 py-2.5 text-sm"
-                    >
-                      <span className="truncate">
-                        {money.categoryMap.get(suggestion.categoryId)?.name ?? suggestion.categoryId}
-                      </span>
-                      <span className="tabular text-muted">
-                        {format.money(suggestion.limit, { round: true })}
-                        <span className="ml-2 text-xs text-faint">
-                          median of {suggestion.months}
+                      primary={
+                        money.categoryMap.get(suggestion.categoryId)?.name ?? suggestion.categoryId
+                      }
+                      secondary={`median of ${suggestion.months} month${suggestion.months === 1 ? "" : "s"}`}
+                      value={
+                        <span className="tabular">
+                          {format.money(suggestion.limit, { round: true })}
                         </span>
-                      </span>
-                    </li>
+                      }
+                    />
                   ))}
-                </ul>
-              </Card>
+                </Rows>
+              </div>
             )}
           </>
         ) : (
           <>
-            <Card>
-              <div className="flex items-baseline justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-faint">
-                    Left to spend
-                  </p>
-                  <p className="tabular mt-1 text-[32px] font-semibold leading-none">
-                    {format.money(report.totals.remaining, { round: true })}
-                  </p>
-                </div>
-                {report.daysLeft > 0 && report.totals.perDay > 0 && (
-                  <span className="tabular text-sm text-muted">
-                    {format.money(report.totals.perDay, { round: true })} a day
-                  </span>
-                )}
-              </div>
+            <Panel>
+              <Hero
+                label="Left to spend"
+                value={format.money(report.totals.remaining, { round: true })}
+                delta={
+                  report.daysLeft > 0 && report.totals.perDay > 0
+                    ? `${format.money(report.totals.perDay, { round: true })} a day`
+                    : undefined
+                }
+              />
 
-              <div className="mt-4">
+              <div className="mt-3">
                 <BudgetBar
                   spent={report.totals.spent}
                   available={report.totals.available}
@@ -192,29 +169,28 @@ export default function BudgetPage() {
                   color="var(--color-brand)"
                   tone={overallTone}
                 />
-                <div className="mt-2 flex justify-between text-xs text-faint">
-                  <span>
-                    {format.money(report.totals.spent, { round: true })} spent of{" "}
-                    {format.money(report.totals.available, { round: true })}
-                  </span>
-                  <span>{formatPct(report.progress)} through the month</span>
-                </div>
+                <p className="mt-1.5 text-[11px] text-faint">
+                  {format.money(report.totals.spent, { round: true })} spent of{" "}
+                  {format.money(report.totals.available, { round: true })}
+                </p>
               </div>
 
               {report.unbudgeted > 0 && (
-                <p className="mt-4 rounded-lg bg-surface-2 px-3 py-2 text-xs leading-relaxed text-muted">
-                  {format.money(report.unbudgeted, { round: true })} was spent outside these
-                  envelopes
-                  {report.uncategorised > 0 &&
-                    `, ${format.money(report.uncategorised, { round: true })} of it with no category at all`}
-                  .
-                </p>
+                <div className="mt-3">
+                  <Note>
+                    {format.money(report.unbudgeted, { round: true })} was spent outside these
+                    envelopes
+                    {report.uncategorised > 0 &&
+                      `, ${format.money(report.uncategorised, { round: true })} of it with no category at all`}
+                    .
+                  </Note>
+                </div>
               )}
-            </Card>
+            </Panel>
 
             <div>
-              <SectionTitle>Envelopes</SectionTitle>
-              <div className="space-y-3">
+              <Label>Envelopes</Label>
+              <div className="space-y-2">
                 {report.lines.map((line) => (
                   <BudgetRow
                     key={line.categoryId}
@@ -259,45 +235,55 @@ const BudgetRow = ({
 }) => {
   const format = useMoneyFormat();
   return (
-    <Card as="section">
+    <Panel as="section" className="p-3">
       <button type="button" onClick={onEdit} className="w-full text-left">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="flex min-w-0 items-center gap-2">
+          <span className="flex min-w-0 items-center gap-1.5">
             <span
-              className="h-2.5 w-2.5 shrink-0 rounded-sm"
+              className="h-2 w-2 shrink-0 rounded-sm"
               style={{ background: color }}
               aria-hidden="true"
             />
-            <span className="truncate font-medium">{name}</span>
+            <span className="truncate text-[13px] font-medium">{name}</span>
             {line.rollover && line.carry !== 0 && (
               <Badge tone={line.carry > 0 ? "brand" : "warn"}>
                 {line.carry > 0 ? "+" : ""}
-                {format.money(line.carry, { round: true })} carried
+                {format.money(line.carry, { round: true })}
               </Badge>
             )}
           </span>
-          <span className="tabular shrink-0 text-sm">
-            <Money cents={line.remaining} round />
-            <span className="text-faint"> left</span>
+          <span className="shrink-0 text-[13px]">
+            <Money
+              cents={line.remaining}
+              round
+              className={line.remaining < 0 ? "text-danger" : ""}
+            />
+            <span className="text-[11px] text-faint"> left</span>
           </span>
         </div>
 
-        <div className="mt-2.5">
+        <div className="mt-2">
           <BudgetBar
             spent={line.spent}
             available={line.available}
             expected={line.expected}
             color={color}
-            tone={line.pace === "spent" ? "spent" : line.pace === "over" ? "over" : "neutral"}
+            tone={
+              line.pace === "spent"
+                ? "spent"
+                : line.pace === "over" && progress >= 0.15
+                  ? "over"
+                  : "neutral"
+            }
           />
         </div>
 
-        <div className="mt-2 flex justify-between text-xs text-faint">
+        <div className="mt-1.5 flex justify-between gap-2 text-[11px] text-faint">
           <span>
             {format.money(line.spent, { round: true })} of{" "}
             {format.money(line.available, { round: true })}
           </span>
-          <span>
+          <span className="truncate">
             {line.pace === "spent"
               ? "Envelope empty"
               : line.pace === "over" && progress >= 0.15
@@ -308,7 +294,7 @@ const BudgetRow = ({
           </span>
         </div>
       </button>
-    </Card>
+    </Panel>
   );
 };
 

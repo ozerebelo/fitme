@@ -53,19 +53,23 @@ export const Money = ({
   tone = "plain",
   signed,
   round,
+  trim,
   className,
 }: {
   cents: Cents;
   currency?: string;
   tone?: "plain" | "auto" | "muted";
   signed?: boolean;
+  /** Summary figures only — it really rounds. */
   round?: boolean;
+  /** Exact, but without a column of `.00`. What every list row uses. */
+  trim?: boolean;
   className?: string;
 }) => {
   const format = useMoneyFormat();
   const text = currency
-    ? format.inCurrency(cents, currency, { signed, round })
-    : format.money(cents, { signed, round });
+    ? format.inCurrency(cents, currency, { signed, round, trimZeros: trim })
+    : format.money(cents, { signed, round, trimZeros: trim });
 
   return (
     <span

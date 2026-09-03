@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { toDateKey } from "@fitme/core";
+import { fromDateKey, toDateKey } from "@fitme/core";
 import {
   LIABILITY_KINDS,
   addMonths,
@@ -16,7 +16,7 @@ import {
 } from "@fitme/money";
 import { useMoney } from "@/lib/money";
 import { TrendChart } from "@/components/charts";
-import { Badge, Button, Card, EmptyState, PageHeader, SectionTitle, Spinner } from "@/components/ui";
+import { Badge, Button, Spinner } from "@/components/ui";
 import {
   ChevronRightIcon,
   DumbbellIcon,
@@ -26,8 +26,19 @@ import {
   SettingsIcon,
   UploadIcon,
 } from "@/components/icons";
-import { FlowBars, StatRow } from "@/components/money/charts";
+import { FlowBars } from "@/components/money/charts";
 import { Money, useMoneyFormat } from "@/components/money/format";
+import {
+  Empty,
+  Figures,
+  HeaderButton,
+  Hero,
+  Label,
+  MoneyHeader,
+  Panel,
+  Row,
+  Rows,
+} from "@/components/money/ui";
 import { AccountSheet } from "@/components/money/AccountSheet";
 import { ImportSheet } from "@/components/money/ImportSheet";
 import { TransactionSheet } from "@/components/money/TransactionSheet";
@@ -81,70 +92,59 @@ export default function MoneyOverviewPage() {
     worthPoints.length > 1
       ? worthPoints[worthPoints.length - 1]!.value - worthPoints[worthPoints.length - 2]!.value
       : 0;
+  const dueNames = [...new Set(money.due.map((occurrence) => occurrence.rule.name))];
 
   return (
     <div>
-      <PageHeader
+      <MoneyHeader
         title="Money"
-        subtitle={report.headline}
+        meta={fromDateKey(asOf).toLocaleDateString(format.locale, {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })}
         action={
-          <div className="flex gap-2">
-            <Link
-              href="/"
-              aria-label="Back to training"
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted hover:text-text"
-            >
-              <DumbbellIcon className="h-5 w-5" />
-            </Link>
-            <Link
-              href="/money/accounts"
-              aria-label="Accounts and money settings"
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted hover:text-text"
-            >
-              <SettingsIcon className="h-5 w-5" />
-            </Link>
-          </div>
+          <>
+            <HeaderButton label="Back to training" href="/">
+              <DumbbellIcon className="h-[18px] w-[18px]" />
+            </HeaderButton>
+            <HeaderButton label="Accounts and money settings" href="/money/accounts">
+              <SettingsIcon className="h-[18px] w-[18px]" />
+            </HeaderButton>
+          </>
         }
       />
 
-      <div className="space-y-4 px-4">
+      <div className="space-y-3 px-4">
         {money.accounts.length === 0 ? (
-          <EmptyState
+          <Empty
             title="Start with one account"
             detail="Add the account your salary lands in. You can import a statement straight after, and everything else — budgets, goals, the portfolio — builds on top of it."
             action={
-              <Button variant="primary" onClick={() => setSheet("account")}>
+              <Button variant="primary" size="sm" onClick={() => setSheet("account")}>
                 Add an account
               </Button>
             }
           />
         ) : (
           <>
-            <Card>
-              <div className="flex items-baseline justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-faint">
-                    Net worth
-                  </p>
-                  <p className="tabular mt-1 text-[32px] font-semibold leading-none">
-                    {format.money(worth.total, { round: true })}
-                  </p>
-                </div>
-                {monthChange !== 0 && (
-                  <span
-                    className={`tabular text-sm ${monthChange > 0 ? "text-ok" : "text-danger"}`}
-                  >
-                    {monthChange > 0 ? "+" : ""}
-                    {format.money(Math.round(monthChange * 100), { round: true })} this month
-                  </span>
-                )}
-              </div>
+            <Panel>
+              <Hero
+                label="Net worth"
+                value={format.money(worth.total, { round: true })}
+                delta={
+                  monthChange !== 0
+                    ? `${monthChange > 0 ? "+" : ""}${format.money(Math.round(monthChange * 100), { round: true })} this month`
+                    : undefined
+                }
+                deltaTone={monthChange > 0 ? "up" : "down"}
+              />
 
               {worthPoints.length > 1 && (
-                <div className="mt-4">
+                <div className="mt-3">
                   <TrendChart
                     points={worthPoints}
-                    height={150}
+                    height={120}
                     valueLabel="Net worth"
                     seriesLabel="Net worth"
                     format={(value) => format.money(Math.round(value * 100), { round: true })}
@@ -152,49 +152,47 @@ export default function MoneyOverviewPage() {
                 </div>
               )}
 
-              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-sm">
-                <div>
-                  <dt className="text-faint">Assets</dt>
-                  <dd className="tabular font-medium text-ok">
-                    {format.money(worth.assets, { round: true })}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-faint">Owed</dt>
-                  <dd className="tabular font-medium text-danger">
-                    {format.money(worth.liabilities, { round: true })}
-                  </dd>
-                </div>
-              </dl>
-            </Card>
+              <div className="mt-3 border-t border-border pt-3">
+                <Figures
+                  items={[
+                    {
+                      label: "Assets",
+                      value: format.money(worth.assets, { round: true }),
+                      tone: "up",
+                    },
+                    {
+                      label: "Owed",
+                      value: format.money(worth.liabilities, { round: true }),
+                      tone: worth.liabilities < 0 ? "down" : undefined,
+                    },
+                  ]}
+                />
+              </div>
+            </Panel>
 
             {money.due.length > 0 && (
               <Link href="/money/plan" className="block">
-                <Card className="border-warn/40 bg-warn/5 transition-colors hover:border-warn">
-                  <div className="flex items-center gap-3">
-                    <RepeatIcon className="h-5 w-5 shrink-0 text-warn" />
+                <Panel className="border-warn/40 bg-warn/5 transition-colors hover:border-warn">
+                  <div className="flex items-center gap-2.5">
+                    <RepeatIcon className="h-[18px] w-[18px] shrink-0 text-warn" />
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium">
+                      <p className="text-[13px] font-medium">
                         {money.due.length} standing payment
                         {money.due.length === 1 ? "" : "s"} due
                       </p>
-                      <p className="truncate text-sm text-muted">
-                        {[...new Set(money.due.map((occurrence) => occurrence.rule.name))]
-                          .slice(0, 3)
-                          .join(", ")}{" "}
-                        — post them when they have actually left.
+                      <p className="truncate text-[11px] text-muted">
+                        {dueNames.slice(0, 3).join(", ")} — post them when they have left.
                       </p>
                     </div>
-                    <ChevronRightIcon className="h-5 w-5 shrink-0 text-faint" />
+                    <ChevronRightIcon className="h-4 w-4 shrink-0 text-faint" />
                   </div>
-                </Card>
+                </Panel>
               </Link>
             )}
 
-            <Card>
-              <SectionTitle>This month</SectionTitle>
-              <StatRow
-                stats={[
+            <Panel>
+              <Figures
+                items={[
                   { label: "In", value: format.money(report.month.income, { round: true }) },
                   { label: "Out", value: format.money(report.month.expenses, { round: true }) },
                   {
@@ -209,22 +207,23 @@ export default function MoneyOverviewPage() {
                 ]}
               />
               {flowBars.some((bar) => bar.income > 0 || bar.expenses > 0) && (
-                <div className="mt-4 border-t border-border pt-4">
+                <div className="mt-3 border-t border-border pt-3">
                   <FlowBars
                     data={flowBars}
+                    height={110}
                     format={(value) => format.money(Math.round(value * 100), { round: true })}
                   />
                 </div>
               )}
-            </Card>
+            </Panel>
 
             {report.insights.length > 0 && (
               <Link href="/money/plan" className="block">
-                <Card className="transition-colors hover:border-faint">
-                  <div className="flex items-start gap-3">
+                <Panel className="transition-colors hover:border-faint">
+                  <div className="flex items-start gap-2.5">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex items-center gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-faint">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">
                           What stands out
                         </span>
                         <Badge
@@ -241,14 +240,14 @@ export default function MoneyOverviewPage() {
                           {report.insights[0]!.domain}
                         </Badge>
                       </div>
-                      <p className="font-medium">{report.insights[0]!.title}</p>
-                      <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted">
+                      <p className="text-[13px] font-medium">{report.insights[0]!.title}</p>
+                      <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-muted">
                         {report.insights[0]!.detail}
                       </p>
                     </div>
-                    <ChevronRightIcon className="mt-1 h-5 w-5 shrink-0 text-faint" />
+                    <ChevronRightIcon className="mt-0.5 h-4 w-4 shrink-0 text-faint" />
                   </div>
-                </Card>
+                </Panel>
               </Link>
             )}
 
@@ -259,19 +258,19 @@ export default function MoneyOverviewPage() {
                 { label: "Import", Icon: UploadIcon, onClick: () => setSheet("import") },
                 { label: "Spending", Icon: ReceiptIcon, href: "/money/spending" },
               ].map(({ label, Icon, onClick, href, accent }) => {
-                const className = `flex flex-col items-center justify-center gap-1.5 rounded-xl border p-3 text-center text-[11px] font-medium transition-colors ${
+                const className = `flex h-[58px] flex-col items-center justify-center gap-1 rounded-[12px] border text-[11px] font-medium transition-colors ${
                   accent
                     ? "border-brand/40 bg-brand/10 text-brand hover:bg-brand/15"
                     : "border-border bg-surface text-muted hover:text-text"
                 }`;
                 return href ? (
                   <Link key={label} href={href} className={className}>
-                    <Icon className="h-5 w-5" />
+                    <Icon className="h-[18px] w-[18px]" />
                     {label}
                   </Link>
                 ) : (
                   <button key={label} type="button" onClick={onClick} className={className}>
-                    <Icon className="h-5 w-5" />
+                    <Icon className="h-[18px] w-[18px]" />
                     {label}
                   </button>
                 );
@@ -279,50 +278,47 @@ export default function MoneyOverviewPage() {
             </div>
 
             <div>
-              <SectionTitle
+              <Label
                 action={
-                  <Link href="/money/accounts" className="text-xs text-brand">
+                  <Link href="/money/accounts" className="text-[11px] text-brand">
                     Manage
                   </Link>
                 }
               >
                 Accounts
-              </SectionTitle>
-              <Card className="p-0">
-                <ul className="divide-y divide-border">
-                  {money.balances
-                    .filter(({ account }) => !account.archived)
-                    .map(({ account, balance }) => {
-                      const used = utilisation(account, balance);
-                      return (
-                        <li key={account.id}>
-                          <Link
-                            href={`/money/spending?account=${account.id}`}
-                            className="flex items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-surface-2"
-                          >
-                            <div className="min-w-0">
-                              <div className="truncate font-medium">{account.name}</div>
-                              <div className="truncate text-xs text-faint">
-                                {account.institution ?? account.kind}
-                                {used != null && ` · ${Math.round(used * 100)}% of limit used`}
-                              </div>
-                            </div>
-                            <Money
-                              cents={balance}
-                              currency={account.currency}
-                              className={
-                                LIABILITY_KINDS.has(account.kind) || balance < 0
-                                  ? "text-danger"
-                                  : ""
-                              }
-                              round
-                            />
-                          </Link>
-                        </li>
-                      );
-                    })}
-                </ul>
-              </Card>
+              </Label>
+              <Rows>
+                {money.balances
+                  .filter(({ account }) => !account.archived)
+                  .map(({ account, balance }) => {
+                    const used = utilisation(account, balance);
+                    return (
+                      <Row
+                        key={account.id}
+                        href={`/money/spending?account=${account.id}`}
+                        primary={account.name}
+                        secondary={[
+                          account.institution ?? account.kind,
+                          used != null ? `${Math.round(used * 100)}% of limit` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        value={
+                          <Money
+                            cents={balance}
+                            currency={account.currency}
+                            trim
+                            className={
+                              LIABILITY_KINDS.has(account.kind) || balance < 0
+                                ? "text-danger"
+                                : ""
+                            }
+                          />
+                        }
+                      />
+                    );
+                  })}
+              </Rows>
             </div>
           </>
         )}

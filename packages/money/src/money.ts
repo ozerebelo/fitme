@@ -141,6 +141,14 @@ export interface FormatOptions {
   locale?: string;
   /** Drop the minor units. Totals read better without a cent nobody spends. */
   round?: boolean;
+  /**
+   * Print the minor units only when there are any.
+   *
+   * Not the same as rounding: `€66` and `€13.49` are both exact. A ledger must
+   * not round — that is a lie about what left the account — but a column of
+   * `.00`s is noise, and dropping them is what makes a long list readable.
+   */
+  trimZeros?: boolean;
   /** Always show a sign, including `+`. For deltas and cash flow. */
   signed?: boolean;
   /** `€1.2k`. For axes and dense rows. */
@@ -157,7 +165,9 @@ export const formatMoney = (
   const info = currencyInfo(currency);
   const value = cents / 10 ** info.decimals;
   const locale = options.locale;
-  const digits = options.round || options.compact ? 0 : info.decimals;
+  const exact = cents % 10 ** info.decimals === 0;
+  const digits =
+    options.round || options.compact || (options.trimZeros && exact) ? 0 : info.decimals;
 
   let text: string;
   try {
